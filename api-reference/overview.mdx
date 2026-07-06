@@ -1,7 +1,7 @@
 ---
-title: "ApiSquare HTTP API Reference"
+title: "ApiSquare API Overview – Endpoints and Authentication"
 sidebarTitle: "Overview"
-description: "ApiSquare exposes REST endpoints for Telegram webhook delivery, health checks, and admin operations. Admin endpoints require a session cookie obtained via POST /api/admin/login."
+description: "Complete reference for all 10 ApiSquare HTTP endpoints: public health checks, Telegram webhook handler, and cookie-authenticated admin routes."
 ---
 
 ApiSquare's HTTP API is built with Next.js App Router route handlers. Every endpoint returns JSON. Public endpoints require no authentication. Admin endpoints require an `admin_session` cookie, which is issued as an `HttpOnly` cookie when you call `POST /api/admin/login` with valid credentials. All requests and responses use `Content-Type: application/json`.

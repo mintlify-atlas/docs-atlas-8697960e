@@ -1,7 +1,7 @@
 ---
-title: "Register the Telegram Webhook for ApiSquare"
+title: "Telegram Webhook Setup for the ApiSquare Booking Bot"
 sidebarTitle: "Webhook Setup"
-description: "Configure the Telegram webhook to point at your deployed ApiSquare instance using the included setup-webhook.js script or the Telegram Bot API directly."
+description: "Register the Telegram webhook for your ApiSquare deployment using setup-webhook.js, an npm script, or a direct Telegram Bot API call."
 ---
 
 Telegram delivers bot updates by calling a webhook URL of your choice over HTTPS every time a user sends a message or taps a button. ApiSquare exposes `POST /api/webhook` for this purpose — you need to register that URL with Telegram once after each deployment so Telegram knows where to forward incoming updates.
@@ -34,16 +34,28 @@ On success you will see:
    Respuesta de Telegram: Webhook was set
 ```
 
-If `TELEGRAM_TOKEN` is missing from the environment the script exits with an error before making any network call.
+If `TELEGRAM_TOKEN` is missing from the environment the script exits with an error before making any network call. If the URL argument is omitted entirely, the script also exits early with usage instructions:
+
+```
+❌ Error: Debes pasar la URL del webhook como argumento.
+   Uso: node setup-webhook.js https://tu-proyecto.vercel.app/api/webhook
+```
 
 ---
 
-## Method 2 — npm Script
+## Method 2 — configurar-webhook-facil.js Script
 
-The `setup-webhook` npm script is an alias for `node setup-webhook.js`. Pass the URL after `--` to forward it as a CLI argument:
+The repository also includes `configurar-webhook-facil.js`, which hard-codes the production URL `https://apisquare.vercel.app/api/webhook` so you do not need to pass a CLI argument. It reads `TELEGRAM_TOKEN` from `.env` and prints progress to the console:
 
 ```bash
-npm run setup-webhook -- https://your-app.vercel.app/api/webhook
+node configurar-webhook-facil.js
+```
+
+On success you will see:
+
+```
+✅ Webhook configurado exitosamente!
+   Ahora puedes probar el bot enviando /start
 ```
 
 ---
@@ -63,7 +75,22 @@ Replace `<YOUR_TOKEN>` with your actual bot token from BotFather.
 
 ## Verifying the Webhook
 
-After registration, confirm that Telegram is pointing at the correct URL:
+After registration, confirm that Telegram is pointing at the correct URL. You can use `verificar-webhook.js`:
+
+```bash
+node verificar-webhook.js
+```
+
+On success it prints:
+
+```
+✅ Estado del webhook:
+   URL configurada: https://your-app.vercel.app/api/webhook
+   Último error: Ninguno
+   Actualizaciones pendientes: 0
+```
+
+Or call the Telegram Bot API directly:
 
 ```bash
 curl https://api.telegram.org/bot<YOUR_TOKEN>/getWebhookInfo

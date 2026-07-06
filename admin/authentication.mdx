@@ -26,11 +26,11 @@ node scripts/generate-hash.js mysecretpassword
 The script outputs the hash and a ready-to-paste `.env` line:
 
 ```
-✅ Hash generated:
+✅ Hash generado:
 
 $2b$10$...
 
-Copy this line to your .env:
+Copia esta línea en tu .env:
 
 ADMIN_PASSWORD=$2b$10$...
 ```
@@ -90,11 +90,11 @@ After a failed attempt, the `401` response includes the number of attempts remai
 }
 ```
 
-Once the 5th failure is recorded, all subsequent login requests from that IP return HTTP `429` until the window expires:
+Once the 5th failure is recorded, all subsequent login requests from that IP return HTTP `429` until the window expires. The error message is dynamic — the number of minutes remaining is computed at response time and pluralised accordingly:
 
 ```json
 {
-  "error": "Too many failed attempts. Try again in 15 minutes.",
+  "error": "Demasiados intentos fallidos. Intentá nuevamente en 15 minutos.",
   "blocked": true,
   "resetIn": 900
 }

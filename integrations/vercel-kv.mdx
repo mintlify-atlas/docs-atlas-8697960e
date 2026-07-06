@@ -1,7 +1,7 @@
 ---
-title: "Vercel KV Storage: Persisting ApiSquare Data"
+title: "Vercel KV: How ApiSquare Stores and Retrieves Data"
 sidebarTitle: "Vercel KV"
-description: "ApiSquare uses Vercel KV (Redis-compatible) to persist reservations, conversation state, sessions, and configuration. Falls back to in-memory storage locally."
+description: "ApiSquare uses Vercel KV (Redis-compatible) to persist reservations, conversation state, sessions, and config. Falls back to in-memory globals locally."
 ---
 
 Vercel KV is ApiSquare's primary data store in production. It is Redis-compatible and accessed through the `@vercel/kv` package (version `^3.0.0`). When the `KV_REST_API_URL` and `KV_REST_API_TOKEN` environment variables are absent — as they typically are during local development — the app falls back to in-memory Node.js globals, so you can run and test the bot without any external infrastructure.
@@ -44,10 +44,17 @@ The KV client is created once per module and guarded by a try/catch so that a mi
 ```typescript
 import { createClient } from '@vercel/kv';
 
-const kv = createClient({
-  url: process.env.KV_REST_API_URL,
-  token: process.env.KV_REST_API_TOKEN,
-});
+let kv: any = null;
+try {
+  if (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) {
+    kv = createClient({
+      url: process.env.KV_REST_API_URL,
+      token: process.env.KV_REST_API_TOKEN,
+    });
+  }
+} catch (e) {
+  console.log('KV not available locally, using memory storage');
+}
 ```
 
 The `kv` variable is `null` when the env vars are absent. Every function that needs persistence checks `if (kv)` before calling KV and falls through to the in-memory equivalent otherwise.

@@ -1,5 +1,5 @@
 ---
-title: "ApiSquare: Telegram Appointment Booking System"
+title: "ApiSquare — Telegram Bot Appointment Booking System"
 sidebarTitle: "Home"
 description: "ApiSquare is a Telegram-bot-powered appointment booking platform built on Next.js. Patients book via chat; admins manage everything from a web dashboard."
 ---
@@ -44,10 +44,16 @@ ApiSquare has two main surfaces that work together:
 
 <Steps>
   <Step title="Clone and install dependencies">
-    Clone the repository and install Node.js dependencies with your preferred package manager.
+    Clone the repository and install Node.js dependencies:
+
+    ```bash
+    git clone https://github.com/your-org/apisquare.git
+    cd apisquare
+    npm install
+    ```
   </Step>
   <Step title="Set environment variables">
-    Copy `.env.example` to `.env.local` and fill in your `TELEGRAM_TOKEN`, `ADMIN_PASSWORD`, and Vercel KV credentials. See [Environment Variables](/environment-variables).
+    Create `.env.local` at the project root and populate your `TELEGRAM_TOKEN`, `ADMIN_PASSWORD`, and Vercel KV credentials (`KV_REST_API_URL`, `KV_REST_API_TOKEN`). See [Environment Variables](/environment-variables) for the full list.
   </Step>
   <Step title="Register the Telegram webhook">
     After deploying to Vercel, run `node setup-webhook.js https://your-app.vercel.app/api/webhook` to point Telegram at your deployment.

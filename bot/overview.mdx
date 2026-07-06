@@ -1,7 +1,7 @@
 ---
-title: "ApiSquare Telegram Bot: How It Works"
+title: "ApiSquare Telegram Bot: Commands, Rate Limits, and Config"
 sidebarTitle: "Overview"
-description: "The ApiSquare Telegram bot handles end-to-end appointment booking through an interactive inline-keyboard conversation flow, with rate limiting and deduplication built in."
+description: "The ApiSquare Telegram bot handles appointment booking via inline-keyboard flows, with per-user rate limiting and update deduplication built in."
 ---
 
 ApiSquare is a Telegram-powered appointment booking system built on Next.js. When a user sends a message or taps an inline-keyboard button in the Telegram chat, Telegram delivers the update as an HTTP POST request to your deployed app at `POST /api/webhook`, which is handled by the Next.js route handler in `app/api/webhook/route.ts`. From there, the bot reads and writes conversation state in Vercel KV, enforces per-user rate limits, deduplicates repeated updates, and replies to users through the Telegram Bot API — all without requiring any free-text input beyond the user's name during booking.
@@ -14,10 +14,10 @@ Users can interact with the bot through the following text commands or the equiv
 
 | Command / Text | What It Does |
 |---|---|
-| `/start`, `hola`, `hello`, `hey`, `buenos días`, `buenas tardes`, `buenas noches` | Clears conversation state and displays the main menu |
-| `/reservar`, `reservar`, `reservar turno`, `quiero reservar`, `agendar`, `hacer una reserva` | Starts the booking flow |
-| `/servicios`, `servicios`, `servicio`, `que servicios hay` | Lists all available services and their prices |
-| `/misreservas`, `mis reservas`, `misreservas`, `reservas`, `ver reservas` | Shows the user's active reservations |
+| `/start`, `start`, `hola`, `hello`, `hey`, `buenos días`, `buenas tardes`, `buenas noches` | Clears conversation state and displays the main menu |
+| `/reservar`, `reservar`, `reservar turno`, `quiero reservar`, `agendar`, `quiero agendar`, `hacer una reserva` | Starts the booking flow |
+| `/servicios`, `servicios`, `servicio`, `/categorias`, `categorias`, `categoria`, `que servicios hay` | Lists all available services and their prices |
+| `/misreservas`, `mis reservas`, `misreservas`, `reservas`, `ver reservas`, `ver mis reservas` | Shows the user's active reservations |
 
 ### Inline Keyboard Navigation
 

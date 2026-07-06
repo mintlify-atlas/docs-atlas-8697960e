@@ -1,7 +1,7 @@
 ---
-title: "POST /api/webhook — Telegram Webhook Receiver"
-sidebarTitle: "POST /api/webhook"
-description: "POST /api/webhook receives Telegram update objects, processes messages and callback queries, and replies via the Telegram Bot API. GET returns 200 OK for verification."
+title: "POST /api/webhook – Telegram Webhook Update Handler"
+sidebarTitle: "Webhook"
+description: "POST /api/webhook receives Telegram update objects and drives multi-step booking flows. GET /api/webhook returns 200 OK for URL verification."
 ---
 
 The `/api/webhook` endpoint is the heart of ApiSquare — Telegram delivers all bot updates here as POST requests. The handler processes both plain text messages and inline-keyboard callback queries, maintaining per-user conversation state in Vercel KV so multi-step booking flows survive across separate Telegram messages. No authentication is required; Telegram calls this endpoint directly on your behalf.
@@ -102,10 +102,10 @@ The message handler normalises incoming text to lowercase and trims whitespace b
 
 | Command / Text | Action |
 |---|---|
-| `/start`, `hola`, `hello`, `hey` | Clear conversation state, show main menu |
-| `/servicios`, `servicios`, `servicio` | List all available services with prices |
-| `/misreservas`, `mis reservas`, `reservas` | Show the user's active reservations |
-| `/reservar`, `reservar`, `quiero reservar`, `agendar` | Begin the multi-step booking flow |
+| `/start`, `start`, `hola`, `hello`, `buenos días`, `buenas tardes`, `buenas noches`, `hey` | Clear conversation state, show main menu |
+| `/servicios`, `servicios`, `servicio`, `/categorias`, `categorias`, `categoria`, `que servicios hay` | List all available services with prices |
+| `/misreservas`, `mis reservas`, `misreservas`, `reservas`, `ver reservas`, `ver mis reservas` | Show the user's active reservations |
+| `/reservar`, `reservar`, `reservar turno`, `quiero reservar`, `agendar`, `quiero agendar`, `hacer una reserva` | Begin the multi-step booking flow |
 
 Any message that does not match a top-level intent and does not correspond to an active conversation step also falls back to showing the main menu.
 

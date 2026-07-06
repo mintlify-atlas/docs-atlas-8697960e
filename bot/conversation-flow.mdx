@@ -1,7 +1,7 @@
 ---
-title: "Telegram Bot Conversation Flow and State Machine"
+title: "ApiSquare Bot Conversation Flow, Steps, and Callbacks"
 sidebarTitle: "Conversation Flow"
-description: "ApiSquare's booking bot walks users through a multi-step inline-keyboard flow. Each step is persisted in Vercel KV so users can resume across sessions."
+description: "ApiSquare's booking bot guides users through a six-step inline-keyboard flow persisted in Vercel KV, with full callback and state reference."
 ---
 
 ApiSquare's bot uses a state-machine approach to guide users through the appointment booking process. The current conversation state for each user is stored in Vercel KV under the key `conv:{chatId}` as a JSON object. Every time a user taps a button or sends a message, the handler reads this state to determine where in the flow the user is, performs the appropriate action, and writes the next state back to KV before replying. Because state is stored server-side, users can close the Telegram app mid-booking and pick up exactly where they left off.
@@ -12,7 +12,7 @@ ApiSquare's bot uses a state-machine approach to guide users through the appoint
 
 <Steps>
   <Step title="Main Menu">
-    The flow begins (or resets) whenever a user sends `/start` or any recognized greeting word (`hola`, `hello`, `hey`, `buenos días`, `buenas tardes`, `buenas noches`). The handler calls `clearState()` to delete any existing `conv:{chatId}` key, then presents the main menu:
+    The flow begins (or resets) whenever a user sends `/start`, `start`, or any recognized greeting word (`hola`, `hello`, `hey`, `buenos días`, `buenas tardes`, `buenas noches`). The handler calls `clearState()` to delete any existing `conv:{chatId}` key, then presents the main menu:
 
     - 📋 **Ver profesionales** — list all professionals
     - 📋 **Ver servicios** — list all services and prices
@@ -23,7 +23,7 @@ ApiSquare's bot uses a state-machine approach to guide users through the appoint
   </Step>
 
   <Step title="Select Professional">
-    Triggered by tapping **Reservar turno** (callback `reservar`) or by the text command `reservar`. Before showing the professional list, the bot checks whether the user already has 2 active bookings. If the limit is reached, a warning is shown instead.
+    Triggered by tapping **Reservar turno** (callback `reservar`) or by the text commands `reservar`, `reservar turno`, `quiero reservar`, `agendar`, `quiero agendar`, or `hacer una reserva`. Before showing the professional list, the bot checks whether the user already has 2 active bookings. If the limit is reached, a warning is shown instead.
 
     The user picks a professional from the inline keyboard. State saved to KV:
 
@@ -134,6 +134,7 @@ Every inline-keyboard button carries a `callback_data` string that the webhook h
 | `servicio:{name}` | Select a service by name, e.g. `servicio:Sesión Premium` |
 | `fecha:{YYYY-MM-DD}` | Select a date, e.g. `fecha:2025-06-18` |
 | `hora:{HH:MM}` | Select a time slot, e.g. `hora:15:30` |
+| `refresh_horarios` | Re-fetch and display the current available slots for the active date without changing state |
 | `confirmar_reserva` | Confirm and persist the reservation to KV |
 | `cambiar_fecha` | Return to date selection, preserving professional/service/name in state |
 | `eliminar:{id}` | Cancel and delete the reservation with the given ID |

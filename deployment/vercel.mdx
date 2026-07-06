@@ -79,6 +79,7 @@ Before deploying, make sure you have the following ready:
     ```
     ✅ Webhook configurado exitosamente.
        URL: https://apisquare-xxx.vercel.app/api/webhook
+       Respuesta de Telegram: Webhook was set
     ```
   </Step>
 
@@ -103,6 +104,19 @@ The entire Vercel configuration for ApiSquare is intentionally minimal:
 ```
 
 Vercel uses this declaration to enable its Next.js build pipeline automatically. The App Router's file-based routing is handled natively — every file under `app/api/` becomes a serverless function, and static assets are served from Vercel's edge CDN with no extra configuration.
+
+## `next.config.js` Configuration
+
+ApiSquare's Next.js configuration file is intentionally empty — no custom settings are needed beyond the framework defaults:
+
+```js next.config.js
+/** @type {import('next').NextConfig} */
+const nextConfig = {};
+
+module.exports = nextConfig;
+```
+
+All routing, image optimization, and build behaviour use Next.js defaults. There are no redirects, rewrites, headers, or experimental flags to manage.
 
 ## npm Scripts Reference
 

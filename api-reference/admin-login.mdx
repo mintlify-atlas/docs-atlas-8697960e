@@ -1,7 +1,7 @@
 ---
-title: "POST /api/admin/login — Admin Authentication"
-sidebarTitle: "POST /api/admin/login"
-description: "POST /api/admin/login authenticates with username and password, sets the admin_session cookie, and returns 200 on success or 401/429 on failure."
+title: "Admin Login — POST /api/admin/login"
+sidebarTitle: "Admin Login"
+description: "Authenticate as admin with username and password. Sets an httpOnly admin_session cookie valid for 7 days, with IP-based brute-force lockout after 5 failed attempts."
 ---
 
 Authenticate as an admin by posting credentials to `/api/admin/login`. On success, the server sets an `admin_session` HTTP-only cookie valid for 7 days. Pass this cookie on all subsequent admin API calls. The endpoint uses Vercel KV to persist the session token across serverless function instances, with an in-memory fallback for local development.
@@ -44,11 +44,27 @@ A `Set-Cookie` header is included with the following attributes:
 | `Secure`    | `true` in production only  |
 | `Path`      | `/`                        |
 
+The session token is a 64-character lowercase hex string generated with `crypto.randomBytes(32).toString('hex')`. It is stored in Vercel KV under the key `session:{token}` with a 7-day TTL, and also registered in the in-memory `globalSessions` Set for local development.
+
 <ResponseField name="success" type="boolean">
   Always `true` on a successful login.
 </ResponseField>
 
 ## Error responses
+
+### HTTP 400 — Invalid JSON
+
+Returned when the request body cannot be parsed as JSON.
+
+```json
+{ "error": "Solicitud inválida" }
+```
+
+<ResponseField name="error" type="string">
+  Human-readable error message.
+</ResponseField>
+
+---
 
 ### HTTP 400 — Missing credentials
 
@@ -96,14 +112,18 @@ Returned when the IP address has exceeded the maximum number of failed attempts.
 
 ```json
 {
-  "error": "Demasiados intentos fallidos. Intentá nuevamente en 15 minutos.",
+  "error": "Demasiados intentos fallidos. Intentá nuevamente en 15 minuto(s).",
   "blocked": true,
   "resetIn": 900
 }
 ```
 
+<Note>
+  The number in the error message is dynamic — it reflects the actual minutes remaining until the lockout expires (e.g. `"Intentá nuevamente en 1 minuto(s)."` or `"Intentá nuevamente en 15 minuto(s)."`).
+</Note>
+
 <ResponseField name="error" type="string">
-  Human-readable error message, including the remaining wait time in minutes.
+  Human-readable error message in Spanish, including the remaining wait time in minutes.
 </ResponseField>
 
 <ResponseField name="blocked" type="boolean">
@@ -125,4 +145,4 @@ The endpoint tracks failed login attempts per IP address using Vercel KV, with a
 | KV key pattern  | `ratelimit:login:{ip}` with 15-min TTL   |
 | Reset trigger   | Counter is cleared on successful login   |
 
-The IP address is resolved from the `X-Forwarded-For` header (first entry) or `X-Real-IP`. It falls back to `127.0.0.1` when neither header is present.
+The IP address is resolved from the `X-Forwarded-For` header (first entry), then the `X-Real-IP` header. It falls back to `127.0.0.1` when neither header is present.

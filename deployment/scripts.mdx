@@ -29,9 +29,12 @@ npm run setup-webhook -- <webhook-url>
 
 ```bash
 node setup-webhook.js https://my-app.vercel.app/api/webhook
-# ✅ Webhook configurado exitosamente.
-#    URL: https://my-app.vercel.app/api/webhook
-#    Respuesta de Telegram: Webhook was set
+```
+
+```
+✅ Webhook configurado exitosamente.
+   URL: https://my-app.vercel.app/api/webhook
+   Respuesta de Telegram: Webhook was set
 ```
 
 <Warning>
@@ -120,10 +123,8 @@ node scripts/get-google-refresh-token.js
 **How it works:**
 
 1. Constructs an OAuth2 authorization URL scoped to `https://www.googleapis.com/auth/calendar` using the configured `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`
-2. Prints the URL and instructs you to open it in a browser
-3. After you grant access, Google redirects to `http://localhost:3000` with a `code` query parameter
-4. The script prompts you to paste that authorization code into the terminal
-5. It exchanges the code for tokens and prints:
+2. Prints the URL and instructs you to open it in a browser; after you grant access, Google redirects to `http://localhost:3000` with a `code` query parameter
+3. Prompts you to paste that authorization code into the terminal, exchanges it for tokens, and prints:
    ```
    GOOGLE_REFRESH_TOKEN=1//04abc123...
    ```
@@ -139,5 +140,5 @@ This script is for one-time setup only. The refresh token it produces is long-li
 </Note>
 
 <Warning>
-Do not commit any `.env` file or any script with hardcoded credentials to version control. The `get-google-refresh-token.js` script contains placeholder credential constants — replace them with values from your own Google Cloud project and ensure the file is listed in `.gitignore` if you customize it.
+The `get-google-refresh-token.js` script ships with hardcoded `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REDIRECT_URI` constants. Replace these values with credentials from your own Google Cloud project before running the script, and add the file to `.gitignore` if you store your credentials inside it. Never commit OAuth client secrets to version control.
 </Warning>

@@ -1,7 +1,7 @@
 ---
-title: "GET and DELETE /api/admin/reservations"
+title: "Admin Reservations — GET and DELETE /api/admin/reservations"
 sidebarTitle: "Admin Reservations"
-description: "GET /api/admin/reservations returns all reservations sorted by date. DELETE removes a reservation by ID from Vercel KV and updates the user's reservation list."
+description: "GET /api/admin/reservations returns all reservations sorted by date and time. DELETE removes a reservation by ID from Vercel KV and updates the user's reservation list."
 ---
 
 The `/api/admin/reservations` endpoint provides full administrative access to the reservation store. Both methods require a valid `admin_session` cookie obtained from `POST /api/admin/login`. In production the reservation data is persisted in Vercel KV; locally, an in-memory global array is used as a fallback.
@@ -39,7 +39,7 @@ curl https://your-app.vercel.app/api/admin/reservations \
 }
 ```
 
-Reservations are sorted by ascending `fecha` + `hora` using a lexicographic comparison on the combined `"YYYY-MM-DD HH:MM"` string. The array is empty (`[]`) when no reservations exist.
+Reservations are scanned from all `reserva:id:*` keys in Vercel KV, then sorted ascending by the combined `"YYYY-MM-DD HH:MM"` string (`"${fecha} ${hora}"`). The array is empty (`[]`) when no reservations exist.
 
 <ResponseField name="reservations" type="Reservation[]">
   Array of all reservations in the system.
@@ -77,16 +77,16 @@ Reservations are sorted by ascending `fecha` + `hora` using a lexicographic comp
 
 ### Error responses
 
-| Status | Body                              | Reason                         |
-| ------ | --------------------------------- | ------------------------------ |
-| 401    | `{ "error": "No autorizado" }`    | Missing or invalid session cookie |
-| 500    | `{ "error": "Internal Server Error" }` | Unexpected server error   |
+| Status | Body                                        | Reason                            |
+| ------ | ------------------------------------------- | --------------------------------- |
+| 401    | `{ "error": "No autorizado" }`              | Missing or invalid session cookie |
+| 500    | `{ "error": "Internal Server Error" }`      | Unexpected server error           |
 
 ---
 
 ## DELETE /api/admin/reservations
 
-Removes a single reservation from the system by its ID. The operation deletes all related KV keys and updates the owning user's reservation list atomically.
+Removes a single reservation from the system by its ID. The operation deletes all related KV keys and updates the owning user's reservation list.
 
 ### Request
 
@@ -117,12 +117,12 @@ curl -X DELETE https://your-app.vercel.app/api/admin/reservations \
 
 ### Error responses
 
-| Status | Body                                    | Reason                              |
-| ------ | --------------------------------------- | ----------------------------------- |
+| Status | Body                                    | Reason                               |
+| ------ | --------------------------------------- | ------------------------------------ |
 | 400    | `{ "error": "ID is required" }`         | `id` field missing from request body |
-| 401    | `{ "error": "No autorizado" }`          | Missing or invalid session cookie   |
-| 404    | `{ "error": "Reservation not found" }`  | No reservation exists with that ID  |
-| 500    | `{ "error": "Internal Server Error" }`  | Unexpected server error             |
+| 401    | `{ "error": "No autorizado" }`          | Missing or invalid session cookie    |
+| 404    | `{ "error": "Reservation not found" }`  | No reservation exists with that ID   |
+| 500    | `{ "error": "Internal Server Error" }`  | Unexpected server error              |
 
 ### What DELETE does
 

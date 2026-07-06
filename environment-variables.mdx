@@ -1,7 +1,7 @@
 ---
 title: "Environment Variables Reference for ApiSquare"
 sidebarTitle: "Environment Variables"
-description: "Complete reference for all environment variables required and optional in ApiSquare, including Telegram, admin auth, Vercel KV, and Google Calendar settings."
+description: "Every environment variable ApiSquare reads, grouped by subsystem: Telegram bot, admin auth, Vercel KV storage, Google Calendar, and Node.js runtime."
 ---
 
 ApiSquare is configured entirely through environment variables — there are no config files to edit. In development, place them in a `.env.local` file at the project root (Next.js loads this automatically). In production, add them via the Vercel dashboard under **Settings → Environment Variables**, or with the Vercel CLI using `vercel env add`. The sections below document every variable the application reads, grouped by subsystem.
@@ -88,11 +88,15 @@ ApiSquare is configured entirely through environment variables — there are no 
 </ParamField>
 
 <ParamField path="GOOGLE_CLIENT_ID" type="string">
-  The OAuth 2.0 client ID from the Google Cloud Console. Used by the OAuth refresh-token helper script when setting up delegated calendar access. Not required if you are using a service account key (`GOOGLE_SERVICE_ACCOUNT_KEY`).
+  The OAuth 2.0 client ID from the Google Cloud Console. This variable is **only** read by the standalone helper script `scripts/get-google-refresh-token.js` — it is **not** used anywhere in the main application. Run that script once, offline, to obtain a refresh token when setting up OAuth-based calendar access. If you authenticate with a service account (`GOOGLE_SERVICE_ACCOUNT_KEY`), you do not need this variable at all.
+
+  <Note>
+    `GOOGLE_CLIENT_ID` is not required in your Vercel environment or `.env.local` for the app to function. It is only needed locally when running the one-time OAuth helper script.
+  </Note>
 </ParamField>
 
 <ParamField path="GOOGLE_CLIENT_SECRET" type="string">
-  The OAuth 2.0 client secret paired with `GOOGLE_CLIENT_ID`. Used by the OAuth refresh-token helper script. Not required for service account authentication.
+  The OAuth 2.0 client secret paired with `GOOGLE_CLIENT_ID`. Like `GOOGLE_CLIENT_ID`, this variable is **only** read by `scripts/get-google-refresh-token.js` and is **not** referenced anywhere in the main application. Do not add it to your production Vercel environment unless you specifically need to re-run the OAuth helper script.
 </ParamField>
 
 ---

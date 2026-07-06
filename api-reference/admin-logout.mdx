@@ -1,7 +1,7 @@
 ---
-title: "POST /api/admin/logout — Invalidate Admin Session"
-sidebarTitle: "POST /api/admin/logout"
-description: "POST /api/admin/logout invalidates the admin_session cookie and removes the token from Vercel KV, then redirects to /login."
+title: "Admin Logout — POST /api/admin/logout"
+sidebarTitle: "Admin Logout"
+description: "Invalidate the active admin session by deleting the admin_session cookie and removing the token from Vercel KV. Redirects to /login with HTTP 302."
 ---
 
 Calling `POST /api/admin/logout` invalidates the current admin session. The `admin_session` cookie is deleted and the session token is removed from Vercel KV. The response is an HTTP 302 redirect to `/login`. No request body is needed — the server reads the session token directly from the inbound cookie.

@@ -1,7 +1,7 @@
 ---
-title: "GET /api/healthcheck — Liveness Probe"
-sidebarTitle: "GET /api/healthcheck"
-description: "GET /api/healthcheck returns the service status and current timestamp. Use it as a liveness probe in your monitoring or load balancer health checks."
+title: "GET /api/healthcheck – Service Liveness Probe Endpoint"
+sidebarTitle: "Healthcheck"
+description: "GET /api/healthcheck returns a 200 status, message, and timestamp. Use it as a liveness probe in monitoring or load-balancer health checks."
 ---
 
 The `/api/healthcheck` endpoint is a lightweight liveness probe. It always returns `HTTP 200` with a JSON body confirming the service is running. No authentication is required, and the endpoint performs no database or external service calls — making it safe to poll frequently without side effects.

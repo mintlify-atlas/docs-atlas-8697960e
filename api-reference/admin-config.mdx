@@ -1,7 +1,7 @@
 ---
-title: "GET and PUT /api/admin/config — Bot Configuration"
+title: "Admin Config — GET and PUT /api/admin/config"
 sidebarTitle: "Admin Config"
-description: "GET /api/admin/config retrieves the current bot configuration. PUT replaces it with a new config including professionals, services, and holidays."
+description: "GET /api/admin/config retrieves the current bot configuration merged with defaults. PUT replaces it with professionals, services, and holidays stored at app:config in Vercel KV."
 ---
 
 The `/api/admin/config` endpoint manages the live bot configuration — the professionals and their weekly schedules, available services, and public holidays. Changes made through this endpoint take effect immediately; the Telegram bot reads the configuration fresh from Vercel KV on every incoming message without requiring a deployment or restart. Both methods require admin authentication via the `admin_session` cookie.
@@ -29,7 +29,13 @@ curl https://your-app.vercel.app/api/admin/config \
     "profesionales": {
       "Francisco Chibilisco": {
         "1": [{ "inicio": "11:00", "fin": "13:00" }],
+        "2": [{ "inicio": "11:00", "fin": "13:00" }],
+        "3": [{ "inicio": "11:00", "fin": "13:00" }],
         "4": [
+          { "inicio": "11:00", "fin": "13:00" },
+          { "inicio": "15:00", "fin": "20:00" }
+        ],
+        "5": [
           { "inicio": "11:00", "fin": "13:00" },
           { "inicio": "15:00", "fin": "20:00" }
         ],
@@ -37,10 +43,13 @@ curl https://your-app.vercel.app/api/admin/config \
       },
       "Javier Martoni": {
         "1": [{ "inicio": "15:30", "fin": "20:00" }],
-        "2": [{ "inicio": "15:30", "fin": "20:00" }]
+        "2": [{ "inicio": "15:30", "fin": "20:00" }],
+        "3": [{ "inicio": "15:30", "fin": "20:00" }],
+        "4": [{ "inicio": "15:30", "fin": "20:00" }],
+        "5": [{ "inicio": "15:30", "fin": "20:00" }]
       }
     },
-    "feriados": ["2024-01-01", "2024-12-25"],
+    "feriados": [],
     "servicios": [
       { "nombre": "Sesión de Quiropráctica", "duracionMinutos": 25, "precio": 30000 },
       { "nombre": "Masaje Relajante", "duracionMinutos": 45, "precio": 30000 },
@@ -50,7 +59,7 @@ curl https://your-app.vercel.app/api/admin/config \
 }
 ```
 
-The response merges the stored configuration with the compiled-in `DEFAULT_CONFIG`. This means every professional defined in the default config is always present in the response even if they were not explicitly stored in KV. Unrecognized top-level fields in the stored config are preserved.
+The response merges the stored configuration with the compiled-in `DEFAULT_CONFIG`. Professional entries from both the default and stored configs are combined via object spread (`{...DEFAULT_CONFIG.profesionales, ...storedConfig.profesionales}`), so every default professional is always present unless explicitly overridden. If the stored `servicios` array is empty, the default services list is used as a fallback.
 
 ### Config object schema
 
@@ -73,6 +82,8 @@ The response merges the stored configuration with the compiled-in `DEFAULT_CONFI
       | `5` | Friday    |
       | `6` | Saturday  |
 
+      Only days on which the professional works need to be listed. Days without an entry are treated as days off.
+
       Each time slot object has:
 
       <Expandable title="TimeSlot fields">
@@ -86,7 +97,7 @@ The response merges the stored configuration with the compiled-in `DEFAULT_CONFI
     </ResponseField>
 
     <ResponseField name="feriados" type="string[]">
-      List of public holiday dates in `YYYY-MM-DD` format. The bot will not offer appointments on these dates regardless of the professional's schedule.
+      List of public holiday dates in `YYYY-MM-DD` format. The bot will not offer appointments on these dates regardless of the professional's schedule. Defaults to an empty array.
     </ResponseField>
 
     <ResponseField name="servicios" type="Service[]">
@@ -152,7 +163,7 @@ curl -X PUT https://your-app.vercel.app/api/admin/config \
 The full config object as described in the GET response schema. All three top-level fields are required.
 
 <ParamField body="profesionales" type="object" required>
-  Map of professional name → weekly schedule. Same structure as returned by GET. Must be a non-null object.
+  Map of professional name → weekly schedule. Same structure as returned by GET. Must be a non-null, non-array object.
 </ParamField>
 
 <ParamField body="feriados" type="array" required>
@@ -167,11 +178,11 @@ The full config object as described in the GET response schema. All three top-le
 
 The server checks that the request body contains all three required top-level keys before persisting:
 
-- `profesionales` must be present and be an object.
-- `feriados` must be present and be an array.
-- `servicios` must be present and be an array.
+- `profesionales` must be present (truthy).
+- `feriados` must be present and be an array (`Array.isArray`).
+- `servicios` must be present and be an array (`Array.isArray`).
 
-Returns HTTP 400 if any check fails.
+If any check fails, the server returns HTTP 400 with a Spanish error message.
 
 ### Success response
 
@@ -194,11 +205,11 @@ Returns HTTP 400 if any check fails.
 
 ### Error responses
 
-| Status | Body                                              | Reason                              |
-| ------ | ------------------------------------------------- | ----------------------------------- |
-| 400    | `{ "error": "Estructura de configuración inválida" }` | Missing or wrong-typed top-level field |
-| 401    | `{ "error": "No autorizado" }`                    | Missing or invalid session cookie   |
-| 500    | `{ "error": "Error interno" }`                    | Unexpected server error             |
+| Status | Body                                                    | Reason                                 |
+| ------ | ------------------------------------------------------- | -------------------------------------- |
+| 400    | `{ "error": "Estructura de configuración inválida" }`   | Missing or wrong-typed top-level field |
+| 401    | `{ "error": "No autorizado" }`                          | Missing or invalid session cookie      |
+| 500    | `{ "error": "Error interno" }`                          | Unexpected server error                |
 
 ### Storage details
 
