@@ -1,0 +1,37 @@
+---
+title: "POST /api/admin/logout — Invalidate Admin Session"
+sidebarTitle: "POST /api/admin/logout"
+description: "POST /api/admin/logout invalidates the admin_session cookie and removes the token from Vercel KV, then redirects to /login."
+---
+
+Calling `POST /api/admin/logout` invalidates the current admin session. The `admin_session` cookie is deleted and the session token is removed from Vercel KV. The response is an HTTP 302 redirect to `/login`. No request body is needed — the server reads the session token directly from the inbound cookie.
+
+## Request
+
+```bash
+curl -X POST https://your-app.vercel.app/api/admin/logout \
+  -b cookies.txt
+```
+
+No request body is required. The `admin_session` session cookie must be present in the request; if it is absent the server still redirects without error.
+
+## Response
+
+**HTTP 302 — Redirect to `/login`**
+
+The `Location` header is set to `/login`. The `admin_session` cookie is deleted via a `Set-Cookie` header that clears the value and sets `Max-Age=0`. The legacy `admin_authenticated` cookie (used by older versions of the app) is also cleared for backwards compatibility.
+
+## What happens on logout
+
+The following steps are executed in order:
+
+1. Reads the `admin_session` cookie value (the 64-character hex session token).
+2. Deletes the `session:{token}` key from Vercel KV, invalidating the token for any other serverless instance.
+3. Removes the token from the in-memory session store (`globalSessions` Set) used as a local development fallback.
+4. Deletes the `admin_session` cookie.
+5. Deletes the legacy `admin_authenticated` cookie for backwards compatibility.
+6. Returns an HTTP 302 redirect to `/login`.
+
+<Note>
+  After logout, all admin API endpoints (`/api/admin/reservations`, `/api/admin/config`, etc.) will return HTTP 401 `{ "error": "No autorizado" }` until a new session is established via `POST /api/admin/login`.
+</Note>

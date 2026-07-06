@@ -1,0 +1,141 @@
+---
+title: "Deploy ApiSquare to Vercel"
+sidebarTitle: "Vercel"
+description: "Step-by-step guide to deploying ApiSquare on Vercel with Vercel KV storage, production environment variables, and Telegram webhook registration."
+---
+
+ApiSquare is designed for Vercel — the included `vercel.json` declares `"framework": "nextjs"` and the app relies on `@vercel/kv` for persistent storage. Vercel's serverless architecture maps cleanly onto the Next.js App Router, and each API route (including `/api/webhook`) is deployed as its own serverless function with no additional configuration required.
+
+## Prerequisites
+
+Before deploying, make sure you have the following ready:
+
+- A [Vercel account](https://vercel.com) and the Vercel CLI installed globally:
+  ```bash
+  npm i -g vercel
+  ```
+- A Telegram bot token obtained from [@BotFather](https://t.me/BotFather)
+- Node.js 18 or later installed locally
+
+## Deployment Steps
+
+<Steps>
+  <Step title="Clone and prepare">
+    Clone the repository and install dependencies:
+    ```bash
+    git clone https://github.com/shadownrx/apisquare.git
+    cd apisquare
+    npm install
+    ```
+  </Step>
+
+  <Step title="Create a Vercel KV database">
+    ApiSquare uses `@vercel/kv` for storing appointment data. You must provision a KV database and link it to your project before deploying.
+
+    1. Open the [Vercel Dashboard](https://vercel.com/dashboard) and navigate to **Storage**.
+    2. Click **Create** and choose **KV (Redis)**.
+    3. Link the new database to your ApiSquare project.
+    4. Pull the generated credentials into your local environment:
+       ```bash
+       vercel env pull .env.local
+       ```
+    This writes `KV_URL`, `KV_REST_API_URL`, `KV_REST_API_TOKEN`, and `KV_REST_API_READ_ONLY_TOKEN` into `.env.local` so local development works against the same store.
+  </Step>
+
+  <Step title="Set required environment variables">
+    Add the three required application secrets via the Vercel CLI:
+    ```bash
+    vercel env add TELEGRAM_TOKEN production
+    vercel env add ADMIN_USERNAME production
+    vercel env add ADMIN_PASSWORD production
+    ```
+
+    `ADMIN_PASSWORD` must be stored as a bcrypt hash, not plain text. Use the bundled helper script to generate it:
+    ```bash
+    node scripts/generate-hash.js yourpassword
+    # Copy the output hash as ADMIN_PASSWORD
+    ```
+
+    The script prints a `$2b$10$...` hash that you can paste directly when prompted by `vercel env add`.
+  </Step>
+
+  <Step title="Deploy to production">
+    Run a production deployment with the Vercel CLI:
+    ```bash
+    npx vercel --prod
+    ```
+    The CLI will output your deployment URL once the build completes. Take note of it — you will need it in the next step. For example:
+    ```
+    https://apisquare-xxx.vercel.app
+    ```
+  </Step>
+
+  <Step title="Register the Telegram webhook">
+    Telegram delivers updates to your app by POSTing to a webhook URL. Register it using the bundled setup script, passing your production URL as the argument:
+    ```bash
+    node setup-webhook.js https://apisquare-xxx.vercel.app/api/webhook
+    ```
+    On success you will see:
+    ```
+    ✅ Webhook configurado exitosamente.
+       URL: https://apisquare-xxx.vercel.app/api/webhook
+    ```
+  </Step>
+
+  <Step title="Verify the deployment">
+    Confirm the app is live and the bot is running by calling the health-check endpoint:
+    ```bash
+    curl https://apisquare-xxx.vercel.app/api/healthcheck
+    # {"status":"ok","message":"Bot de reservas está activo!","timestamp":"..."}
+    ```
+    A `200 OK` response with `"status": "ok"` confirms everything is wired up correctly.
+  </Step>
+</Steps>
+
+## `vercel.json` Configuration
+
+The entire Vercel configuration for ApiSquare is intentionally minimal:
+
+```json vercel.json
+{
+  "framework": "nextjs"
+}
+```
+
+Vercel uses this declaration to enable its Next.js build pipeline automatically. The App Router's file-based routing is handled natively — every file under `app/api/` becomes a serverless function, and static assets are served from Vercel's edge CDN with no extra configuration.
+
+## npm Scripts Reference
+
+The following scripts are defined in `package.json` and available during local development and CI:
+
+| Script | Command | Purpose |
+|---|---|---|
+| `dev` | `next dev` | Start the development server on http://localhost:3000 |
+| `build` | `next build` | Compile the application for production |
+| `start` | `next start` | Start a production server locally |
+| `lint` | `next lint` | Run ESLint across the project |
+| `setup-webhook` | `node setup-webhook.js` | Register the Telegram webhook URL |
+
+Run any script with `npm run <name>`, for example `npm run dev`.
+
+## Automatic Deployments
+
+Connect your GitHub repository to Vercel to enable continuous deployment:
+
+1. In the Vercel Dashboard, go to **Add New → Project** and import your GitHub repository.
+2. Vercel will automatically trigger a production build on every push to `main` or `master`.
+3. Pull requests generate isolated preview deployments at unique URLs such as `https://apisquare-git-feature-xxx.vercel.app`.
+
+<Warning>
+After each redeployment that results in a new URL — including preview deployments — you must re-register the Telegram webhook. Run `setup-webhook.js` again, pointing to the new URL:
+
+```bash
+node setup-webhook.js https://apisquare-git-feature-xxx.vercel.app/api/webhook
+```
+
+Telegram will only deliver updates to the URL that was most recently registered.
+</Warning>
+
+<Tip>
+Use Vercel's **Environment Variable Groups** (Dashboard → Settings → Environment Variables) to keep production secrets isolated from preview and development environments. This prevents preview deployments from accidentally receiving production Telegram traffic.
+</Tip>

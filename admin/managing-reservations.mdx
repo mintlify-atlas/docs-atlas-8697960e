@@ -1,0 +1,67 @@
+---
+title: "View and Manage Appointments in ApiSquare"
+sidebarTitle: "Managing Reservations"
+description: "The Reservas tab shows all upcoming appointments sorted by date and time. Admins can delete individual reservations, which removes them from the user's Telegram history too."
+---
+
+The **Reservas** tab is the primary operational view in the ApiSquare admin dashboard. When the tab is active, the dashboard fetches all reservations from Vercel KV via `GET /api/admin/reservations`, sorts them chronologically by date and then by time, and renders each appointment as a card on a responsive grid. Today's appointments surface at a glance thanks to a distinct badge, and the three summary stats at the top of the page provide a quick overview without requiring any manual counting.
+
+## Stats cards
+
+Three metric cards appear above the reservation grid and update every time the list is refreshed:
+
+| Card | Label | Description |
+|---|---|---|
+| 📋 | **Total** | Total count of all reservations currently stored in KV |
+| 📅 | **Hoy** | Number of reservations whose date matches today |
+| ⏳ | **Próximas** | Number of reservations on today or any future date |
+
+## Reservation cards
+
+Each appointment is displayed as a card with the following fields:
+
+| Field | Description |
+|---|---|
+| **Service icon** | Emoji icon mapped to the service name (e.g. 🦴 for Sesión de Quiropráctica, 💆 for Masaje Relajante) |
+| **Service name** | The booked service, displayed as the card's primary heading |
+| **Profesional** | Name of the assigned professional |
+| **Cliente** | Full name provided by the Telegram user at booking time |
+| **Fecha** | Appointment date formatted as full weekday, day, month, and year (e.g. *lunes, 14 de julio de 2025*) |
+| **Hora** | Appointment time in `HH:MM` 24-hour format |
+| **HOY badge** | A green "HOY" badge appears in the top-right corner of the card when the appointment is scheduled for today |
+
+## Deleting a reservation
+
+<Steps>
+  <Step title="Click &quot;Eliminar cita&quot;">
+    Each reservation card contains an "🗑️ Eliminar cita" button in its footer. Click it to open the confirmation modal for that appointment.
+  </Step>
+  <Step title="Review the confirmation modal">
+    The modal displays the full appointment details — professional, service, client name, date, and time — so you can verify you are deleting the correct record before proceeding.
+  </Step>
+  <Step title="Confirm deletion">
+    Click **Eliminar** in the modal. The dashboard sends `DELETE /api/admin/reservations` with the reservation's `id` in the request body.
+  </Step>
+  <Step title="KV keys are removed">
+    The API deletes two keys from Vercel KV:
+    - `reserva:{profesional}:{fecha}:{hora}` — the time-slot lock key
+    - `reserva:id:{id}` — the full reservation record
+
+    It then reads `user:{chatId}:reservas`, filters out the deleted reservation, and writes the updated array back. This keeps the user's Telegram reservation history in sync.
+  </Step>
+  <Step title="Toast confirmation">
+    A green "Cita eliminada correctamente ✓" toast notification appears at the bottom-right of the screen and auto-dismisses after 3.5 seconds. If the request fails, a red error toast is shown instead.
+  </Step>
+</Steps>
+
+## Self-healing logic
+
+The `GET /api/admin/reservations` endpoint scans Vercel KV using the `reserva:id:*` key pattern to build the reservation list. Because reservations are stored with a **30-day TTL**, orphaned entries in a user's `user:{chatId}:reservas` array (references to records whose KV keys have already expired) are automatically excluded — the response only contains records whose `reserva:id:*` key still exists in KV. This means the admin list is always consistent with actual stored data without requiring any manual cleanup.
+
+## Refreshing the list
+
+The **Refrescar** button in the dashboard header (↻) reloads the reservation list from the API without triggering a full page reload. While the refresh is in progress, the button label changes to "Actualizando..." and the icon spins. The button is disabled during an ongoing load to prevent duplicate requests.
+
+<Note>
+  Reservations are stored with a 30-day TTL in Vercel KV. Once a reservation's TTL expires, it is automatically purged by KV and will no longer appear in the admin dashboard.
+</Note>

@@ -1,0 +1,108 @@
+{
+  "projectType": "saas",
+  "projectName": "ApiSquare",
+  "projectDescription": "A Telegram-bot-powered appointment booking system built on Next.js that lets end-users reserve sessions via chat and gives administrators a web dashboard to manage schedules, services, and reservations — backed by Vercel KV and optional Google Calendar integration.",
+  "theme": "luma",
+  "primaryColor": "#6366f1",
+  "lightColor": "#a5b4fc",
+  "darkColor": "#4338ca",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "environment-variables"
+            ]
+          },
+          {
+            "group": "Telegram Bot",
+            "pages": [
+              "bot/overview",
+              "bot/webhook-setup",
+              "bot/conversation-flow"
+            ]
+          },
+          {
+            "group": "Admin Dashboard",
+            "pages": [
+              "admin/overview",
+              "admin/authentication",
+              "admin/managing-reservations",
+              "admin/configuration"
+            ]
+          },
+          {
+            "group": "Integrations",
+            "pages": [
+              "integrations/vercel-kv",
+              "integrations/google-calendar"
+            ]
+          },
+          {
+            "group": "Deployment",
+            "pages": [
+              "deployment/vercel",
+              "deployment/scripts"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Public Endpoints",
+            "pages": [
+              "api-reference/overview",
+              "api-reference/healthcheck",
+              "api-reference/webhook"
+            ]
+          },
+          {
+            "group": "Admin Endpoints",
+            "pages": [
+              "api-reference/admin-login",
+              "api-reference/admin-logout",
+              "api-reference/admin-reservations",
+              "api-reference/admin-config"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Conversational Telegram bot for end-to-end appointment booking",
+    "Multi-step booking flow: professional → service → name → date → time → confirm",
+    "Real-time availability checking with overlap prevention",
+    "Per-user reservation limit (max 2 active bookings)",
+    "Per-user rate limiting (20 messages / 60 s window)",
+    "Update deduplication to prevent double-processing Telegram webhooks",
+    "Admin web dashboard built with Next.js (reservations + configuration tabs)",
+    "Configurable professionals with per-day time slot schedules",
+    "Configurable services with name, duration (minutes), and price",
+    "Holiday management — block specific dates across all professionals",
+    "Secure admin authentication with bcrypt, session tokens, and brute-force protection (5 attempts, 15-minute lockout)",
+    "Vercel KV (Redis-compatible) for persistent storage in production; in-memory fallback for local development",
+    "Optional Google Calendar integration for availability checks and event creation",
+    "One-command webhook registration via setup-webhook.js",
+    "Admin password hashing utility via scripts/generate-hash.js"
+  ],
+  "publicApiSurface": [
+    "GET  /api              — health overview, lists webhook and healthcheck endpoints",
+    "GET  /api/healthcheck  — liveness probe; returns status, message, and timestamp",
+    "POST /api/webhook      — Telegram webhook receiver (messages + callback queries)",
+    "GET  /api/webhook      — no-op 200 OK (Telegram webhook verification)",
+    "POST /api/admin/login  — authenticate with username/password; sets admin_session cookie",
+    "POST /api/admin/logout — invalidates session cookie; redirects to /login",
+    "GET  /api/admin/reservations — list all reservations (auth required)",
+    "DELETE /api/admin/reservations — delete a reservation by id (auth required)",
+    "GET  /api/admin/config — retrieve current bot configuration (auth required)",
+    "PUT  /api/admin/config — update professionals, services, and holidays (auth required)"
+  ]
+}

@@ -1,0 +1,109 @@
+---
+title: "Register the Telegram Webhook for ApiSquare"
+sidebarTitle: "Webhook Setup"
+description: "Configure the Telegram webhook to point at your deployed ApiSquare instance using the included setup-webhook.js script or the Telegram Bot API directly."
+---
+
+Telegram delivers bot updates by calling a webhook URL of your choice over HTTPS every time a user sends a message or taps a button. ApiSquare exposes `POST /api/webhook` for this purpose — you need to register that URL with Telegram once after each deployment so Telegram knows where to forward incoming updates.
+
+## Prerequisites
+
+Before registering the webhook, make sure you have:
+
+- A **deployed ApiSquare instance** with a public HTTPS URL (e.g. on Vercel).
+- The `TELEGRAM_TOKEN` environment variable set in your deployment (obtainable from [@BotFather](https://t.me/BotFather) on Telegram).
+- For local development only: a tunnel tool such as `ngrok` to expose a public HTTPS URL.
+
+---
+
+## Method 1 — setup-webhook.js Script (Recommended)
+
+The repository includes `setup-webhook.js`, a small Node.js script that reads `TELEGRAM_TOKEN` from your `.env` file and registers the webhook URL you pass as a CLI argument. It performs a POST to `https://api.telegram.org/bot{token}/setWebhook` using Axios and prints the result.
+
+Run it with your deployed app URL:
+
+```bash
+node setup-webhook.js https://your-app.vercel.app/api/webhook
+```
+
+On success you will see:
+
+```
+✅ Webhook configurado exitosamente.
+   URL: https://your-app.vercel.app/api/webhook
+   Respuesta de Telegram: Webhook was set
+```
+
+If `TELEGRAM_TOKEN` is missing from the environment the script exits with an error before making any network call.
+
+---
+
+## Method 2 — npm Script
+
+The `setup-webhook` npm script is an alias for `node setup-webhook.js`. Pass the URL after `--` to forward it as a CLI argument:
+
+```bash
+npm run setup-webhook -- https://your-app.vercel.app/api/webhook
+```
+
+---
+
+## Method 3 — Direct Telegram API Call
+
+You can register the webhook without any scripts by calling the Telegram Bot API directly with `curl`:
+
+```bash
+curl -X POST "https://api.telegram.org/bot<YOUR_TOKEN>/setWebhook" \
+  -d "url=https://your-app.vercel.app/api/webhook"
+```
+
+Replace `<YOUR_TOKEN>` with your actual bot token from BotFather.
+
+---
+
+## Verifying the Webhook
+
+After registration, confirm that Telegram is pointing at the correct URL:
+
+```bash
+curl https://api.telegram.org/bot<YOUR_TOKEN>/getWebhookInfo
+```
+
+A successful response looks like this:
+
+```json
+{
+  "ok": true,
+  "result": {
+    "url": "https://your-app.vercel.app/api/webhook",
+    "has_custom_certificate": false,
+    "pending_update_count": 0,
+    "max_connections": 40,
+    "ip_address": "76.76.21.21"
+  }
+}
+```
+
+The key fields to check:
+
+- **`url`** — should match your deployed webhook URL exactly.
+- **`pending_update_count`** — should be `0` if the bot is processing updates normally. A growing count indicates the endpoint is unreachable or returning errors.
+- **`has_custom_certificate`** — `false` for standard Vercel deployments (which use a Telegram-trusted CA).
+
+---
+
+## Removing the Webhook
+
+If you want to switch to long-polling for local development (e.g. using `bot.js` with `node-telegram-bot-api`), you must delete the webhook first so Telegram stops POSTing to your server:
+
+```bash
+curl -X POST "https://api.telegram.org/bot<YOUR_TOKEN>/deleteWebhook"
+```
+
+<Warning>
+  Telegram requires HTTPS for all webhook URLs. Local `localhost` or `127.0.0.1` URLs will be rejected by Telegram. Use a tunneling tool such as [ngrok](https://ngrok.com) (`ngrok http 3000`) to get a temporary public HTTPS URL for local testing, or deploy to Vercel directly.
+</Warning>
+
+<Note>
+  The webhook route also handles `GET /api/webhook` requests and returns `{"status":"ok"}`. This satisfies any liveness or challenge verification checks that may be performed against the endpoint.
+</Note>

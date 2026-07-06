@@ -1,0 +1,97 @@
+---
+title: "Vercel KV Storage: Persisting ApiSquare Data"
+sidebarTitle: "Vercel KV"
+description: "ApiSquare uses Vercel KV (Redis-compatible) to persist reservations, conversation state, sessions, and configuration. Falls back to in-memory storage locally."
+---
+
+Vercel KV is ApiSquare's primary data store in production. It is Redis-compatible and accessed through the `@vercel/kv` package (version `^3.0.0`). When the `KV_REST_API_URL` and `KV_REST_API_TOKEN` environment variables are absent — as they typically are during local development — the app falls back to in-memory Node.js globals, so you can run and test the bot without any external infrastructure.
+
+## Setting up Vercel KV
+
+<Steps>
+  <Step title="Create a KV database in the Vercel dashboard">
+    Open your project in [vercel.com](https://vercel.com), navigate to the **Storage** tab, and click **Create Database**. Choose **KV** (powered by Upstash) and complete the creation wizard.
+  </Step>
+
+  <Step title="Link the database to your project">
+    Once the database is created, Vercel will prompt you to connect it to one or more projects. Select your ApiSquare project and confirm. This automatically injects the required environment variables into your Vercel deployment.
+  </Step>
+
+  <Step title="Pull the environment variables locally">
+    Run the following command from the root of your project to sync the KV credentials into your local `.env.local` file:
+
+    ```bash
+    vercel env pull .env.local
+    ```
+  </Step>
+
+  <Step title="Verify the variables are present">
+    Open `.env.local` and confirm these two variables exist:
+
+    ```bash
+    KV_REST_API_URL=https://<your-kv-endpoint>.kv.vercel-storage.com
+    KV_REST_API_TOKEN=<your-rest-api-token>
+    ```
+
+    ApiSquare reads both at startup. If either is missing the app silently falls back to in-memory storage.
+  </Step>
+</Steps>
+
+## KV client initialization
+
+The KV client is created once per module and guarded by a try/catch so that a missing configuration never crashes the server at import time:
+
+```typescript
+import { createClient } from '@vercel/kv';
+
+const kv = createClient({
+  url: process.env.KV_REST_API_URL,
+  token: process.env.KV_REST_API_TOKEN,
+});
+```
+
+The `kv` variable is `null` when the env vars are absent. Every function that needs persistence checks `if (kv)` before calling KV and falls through to the in-memory equivalent otherwise.
+
+## Key schema
+
+The table below lists every KV key pattern used across the codebase, along with its value type, expiry policy, and purpose.
+
+| Key Pattern | Type | TTL | Purpose |
+|---|---|---|---|
+| `app:config` | JSON object | None | Bot configuration — professionals, schedules, services, and holidays |
+| `conv:{chatId}` | JSON object | None | Active multi-step conversation state for a Telegram user |
+| `reserva:{prof}:{date}:{time}` | JSON object | 30 days | Reservation record indexed by slot (professional + date + time) |
+| `reserva:id:{id}` | JSON object | 30 days | Same reservation record indexed by its unique ID for O(1) lookups |
+| `user:{chatId}:reservas` | JSON array | None | Ordered list of all active reservations belonging to a user |
+| `session:{token}` | string `"1"` | 7 days | Admin session token used to protect the `/admin` routes |
+| `ratelimit:user:{chatId}` | JSON object | 60 seconds | Per-user message rate-limit counter (max 20 messages per window) |
+| `ratelimit:login:{ip}` | JSON object | 15 minutes | Login brute-force counter to protect the admin login endpoint |
+| `processed:update:{updateId}` | string `"1"` | 600 seconds | Webhook deduplication — prevents double-processing the same Telegram update |
+
+<Note>
+  The `user:{chatId}:reservas` list is self-healing: when the bot loads a user's reservations it cross-checks each entry against `reserva:id:{id}`. Any entry whose corresponding slot key no longer exists is silently removed and the list is rewritten, keeping it consistent even if reservation keys expired.
+</Note>
+
+## Local development fallback
+
+When `KV_REST_API_URL` and `KV_REST_API_TOKEN` are not set, ApiSquare stores all runtime data in Node.js `global` variables that persist for the lifetime of the server process:
+
+| Global variable | Equivalent KV data |
+|---|---|
+| `global._localReservations` | All reservation objects (array) |
+| `global._localAppConfig` | Bot configuration object |
+| `global._localSessions` | Admin session tokens |
+
+These globals are initialized on first access and exported as plain helper functions (`getLocalReservations`, `addLocalReservation`, `getLocalConfig`, `setLocalConfig`) so every route handler can read and write them without duplicating the null-guard logic.
+
+<Warning>
+  In-memory data is lost on every server restart. Do not rely on the local fallback for anything beyond quick smoke tests. Always use a real Vercel KV database before testing booking flows end-to-end.
+</Warning>
+
+## TTL management
+
+Reservation keys (`reserva:{prof}:{date}:{time}` and `reserva:id:{id}`) are written with a 30-day expiry (`{ ex: 86400 * 30 }`). This means stale or past reservations are automatically evicted by Redis without requiring any maintenance job, cron task, or manual cleanup. The webhook deduplication keys expire after 600 seconds and rate-limit keys expire at the end of their respective windows, so those buckets are self-cleaning as well.
+
+<Tip>
+  If you need reservations to live longer than 30 days — for example, to keep a historical audit log — increase the `ex` value in the `guardarReserva` function inside `app/api/webhook/route.ts` and add the same TTL to the `reserva:id:{id}` key written in the same call.
+</Tip>

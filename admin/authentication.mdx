@@ -1,0 +1,128 @@
+---
+title: "Authenticate with the ApiSquare Admin Panel"
+sidebarTitle: "Authentication"
+description: "ApiSquare admin authentication uses bcrypt-hashed passwords, cookie-based sessions, and automatic brute-force lockout after 5 failed attempts."
+---
+
+ApiSquare's admin panel uses a straightforward username-and-password authentication model. When valid credentials are submitted to `POST /api/admin/login`, the server generates a cryptographically random 64-character session token, stores it in Vercel KV with a 7-day TTL, and delivers it to the browser as an HTTP-only `admin_session` cookie. Every subsequent request to a protected admin endpoint is validated by reading that cookie and checking it against KV (or an in-memory store in local development).
+
+## Setting credentials
+
+Credentials are supplied via environment variables:
+
+| Variable | Default | Description |
+|---|---|---|
+| `ADMIN_USERNAME` | `admin` | The login username |
+| `ADMIN_PASSWORD` | *(required)* | Plaintext password **or** a bcrypt hash starting with `$2b$` / `$2a$` |
+
+### Generating a bcrypt hash
+
+Storing a bcrypt hash instead of a plaintext password is strongly recommended for production. Use the included helper script:
+
+```bash
+node scripts/generate-hash.js mysecretpassword
+```
+
+The script outputs the hash and a ready-to-paste `.env` line:
+
+```
+✅ Hash generated:
+
+$2b$10$...
+
+Copy this line to your .env:
+
+ADMIN_PASSWORD=$2b$10$...
+```
+
+Copy the `ADMIN_PASSWORD=...` line into your `.env.local` (development) or into the Vercel project environment variables (production).
+
+At login time, `verifyCredentials()` detects whether the stored value begins with `$2b$` or `$2a$` and uses `bcrypt.compare()` accordingly. Plaintext values are compared with strict equality.
+
+## Login flow
+
+<Steps>
+  <Step title="Navigate to /login">
+    Open the login page at `/login` in your browser. Enter your admin username and password in the form.
+  </Step>
+  <Step title="Credentials are verified">
+    The form submits to `POST /api/admin/login`. The server checks the IP's rate-limit state, then verifies the username against `ADMIN_USERNAME` and the password against `ADMIN_PASSWORD` (plaintext or bcrypt).
+  </Step>
+  <Step title="Session cookie is set">
+    On success, the server generates a 32-byte random token (`crypto.randomBytes(32).toString('hex')`), sets it as the `admin_session` cookie with the following attributes, and redirects to `/admin`:
+
+    | Attribute | Value |
+    |---|---|
+    | `httpOnly` | `true` |
+    | `maxAge` | 604800 (7 days) |
+    | `sameSite` | `strict` |
+    | `secure` | `true` in production, `false` in development |
+    | `path` | `/` |
+  </Step>
+  <Step title="Token is persisted in Vercel KV">
+    The token is stored under the key `session:{token}` with a 7-day TTL:
+
+    ```
+    SET session:<token> "1" EX 604800
+    ```
+
+    In local development without KV configured, the token is added to a Node.js global `Set` (`globalSessions`) instead.
+  </Step>
+</Steps>
+
+## Brute-force protection
+
+The login endpoint tracks failed attempts per IP address. Both the attempt counter and the lockout state are stored in Vercel KV when available, or in a Node.js in-process `Map` (`localAttempts`) during local development.
+
+| Parameter | Value |
+|---|---|
+| Maximum failed attempts | 5 |
+| Lockout duration | 15 minutes (900 seconds) |
+| KV key pattern | `ratelimit:login:{ip}` |
+
+After a failed attempt, the `401` response includes the number of attempts remaining before lockout:
+
+```json
+{
+  "error": "Credenciales incorrectas",
+  "remaining": 3,
+  "blocked": false
+}
+```
+
+Once the 5th failure is recorded, all subsequent login requests from that IP return HTTP `429` until the window expires:
+
+```json
+{
+  "error": "Too many failed attempts. Try again in 15 minutes.",
+  "blocked": true,
+  "resetIn": 900
+}
+```
+
+A successful login clears the rate-limit record for that IP immediately.
+
+## Session validation
+
+Every protected admin endpoint calls `isAuthenticated()` from `lib/auth.ts` before processing the request. The function follows this precedence:
+
+1. Read the `admin_session` cookie from the incoming request.
+2. If the token is present in the in-memory `globalSessions` set (local dev), return `true`.
+3. If Vercel KV credentials (`KV_REST_API_URL` and `KV_REST_API_TOKEN`) are set, look up `session:{token}` in KV. Return `true` only if the stored value equals `"1"`.
+4. As a development fallback (no KV, no in-memory match), return `true` if the token is exactly 64 characters long.
+
+If the cookie is missing or the token cannot be validated, `isAuthenticated()` returns `false` and the endpoint responds with HTTP `401`.
+
+## Logout
+
+Send a `POST` request to `/api/admin/logout` (the "Cerrar sesión" button in the dashboard header does this automatically). The endpoint:
+
+1. Reads the `admin_session` cookie value.
+2. Deletes `session:{token}` from Vercel KV.
+3. Calls `removeLocalSession(token)` to purge the token from the in-memory set.
+4. Deletes the `admin_session` cookie (and the legacy `admin_authenticated` cookie for backwards compatibility).
+5. Redirects the browser to `/login`.
+
+<Warning>
+  In local development without KV configured, sessions are stored in Node.js process memory and are lost on every server restart. Always set `ADMIN_PASSWORD` in `.env.local` before testing so you can log back in after a restart.
+</Warning>

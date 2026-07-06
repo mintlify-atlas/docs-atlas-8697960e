@@ -1,0 +1,134 @@
+---
+title: "GET and DELETE /api/admin/reservations"
+sidebarTitle: "Admin Reservations"
+description: "GET /api/admin/reservations returns all reservations sorted by date. DELETE removes a reservation by ID from Vercel KV and updates the user's reservation list."
+---
+
+The `/api/admin/reservations` endpoint provides full administrative access to the reservation store. Both methods require a valid `admin_session` cookie obtained from `POST /api/admin/login`. In production the reservation data is persisted in Vercel KV; locally, an in-memory global array is used as a fallback.
+
+---
+
+## GET /api/admin/reservations
+
+Fetches every reservation in the system, sorted ascending by date and time.
+
+### Request
+
+```bash
+curl https://your-app.vercel.app/api/admin/reservations \
+  -b cookies.txt
+```
+
+### Response
+
+**HTTP 200**
+
+```json
+{
+  "reservations": [
+    {
+      "id": "lrd4k2abc123",
+      "profesional": "Francisco Chibilisco",
+      "servicio": "Masaje Relajante",
+      "nombre": "Juan Pérez",
+      "fecha": "2024-01-20",
+      "hora": "11:00",
+      "chatId": 987654321
+    }
+  ]
+}
+```
+
+Reservations are sorted by ascending `fecha` + `hora` using a lexicographic comparison on the combined `"YYYY-MM-DD HH:MM"` string. The array is empty (`[]`) when no reservations exist.
+
+<ResponseField name="reservations" type="Reservation[]">
+  Array of all reservations in the system.
+
+  <Expandable title="Reservation object">
+    <ResponseField name="id" type="string">
+      Unique reservation ID generated at booking time (e.g. `lrd4k2abc123`). Used as the KV key suffix under `reserva:id:{id}`.
+    </ResponseField>
+
+    <ResponseField name="profesional" type="string">
+      Full name of the professional associated with the booking (e.g. `"Francisco Chibilisco"`).
+    </ResponseField>
+
+    <ResponseField name="servicio" type="string">
+      Name of the service booked (e.g. `"Masaje Relajante"`).
+    </ResponseField>
+
+    <ResponseField name="nombre" type="string">
+      Client's display name as provided during the Telegram booking flow.
+    </ResponseField>
+
+    <ResponseField name="fecha" type="string">
+      Appointment date in `YYYY-MM-DD` format (e.g. `"2024-01-20"`).
+    </ResponseField>
+
+    <ResponseField name="hora" type="string">
+      Appointment time in `HH:MM` 24-hour format (e.g. `"11:00"`).
+    </ResponseField>
+
+    <ResponseField name="chatId" type="integer">
+      Telegram chat ID of the user who made the booking. Used to send confirmation and cancellation messages via the bot.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Error responses
+
+| Status | Body                              | Reason                         |
+| ------ | --------------------------------- | ------------------------------ |
+| 401    | `{ "error": "No autorizado" }`    | Missing or invalid session cookie |
+| 500    | `{ "error": "Internal Server Error" }` | Unexpected server error   |
+
+---
+
+## DELETE /api/admin/reservations
+
+Removes a single reservation from the system by its ID. The operation deletes all related KV keys and updates the owning user's reservation list atomically.
+
+### Request
+
+```bash
+curl -X DELETE https://your-app.vercel.app/api/admin/reservations \
+  -b cookies.txt \
+  -H "Content-Type: application/json" \
+  -d '{"id": "lrd4k2abc123"}'
+```
+
+### Request body
+
+<ParamField body="id" type="string" required>
+  The unique ID of the reservation to delete. Must correspond to an existing `reserva:id:{id}` key in Vercel KV.
+</ParamField>
+
+### Success response
+
+**HTTP 200**
+
+```json
+{ "success": true }
+```
+
+<ResponseField name="success" type="boolean">
+  Always `true` when the reservation was found and successfully deleted.
+</ResponseField>
+
+### Error responses
+
+| Status | Body                                    | Reason                              |
+| ------ | --------------------------------------- | ----------------------------------- |
+| 400    | `{ "error": "ID is required" }`         | `id` field missing from request body |
+| 401    | `{ "error": "No autorizado" }`          | Missing or invalid session cookie   |
+| 404    | `{ "error": "Reservation not found" }`  | No reservation exists with that ID  |
+| 500    | `{ "error": "Internal Server Error" }`  | Unexpected server error             |
+
+### What DELETE does
+
+The following KV operations are performed in sequence:
+
+1. Fetches the reservation object from `reserva:id:{id}` to retrieve the professional name, date, and time.
+2. Deletes the slot lock key `reserva:{profesional}:{fecha}:{hora}`, freeing the time slot for new bookings.
+3. Deletes the ID index key `reserva:id:{id}`.
+4. Reads `user:{chatId}:reservas`, filters out the entry whose `id` matches, and writes the updated array back to KV.

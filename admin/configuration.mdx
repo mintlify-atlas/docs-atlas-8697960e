@@ -1,0 +1,96 @@
+---
+title: "Configure Services, Schedules, and Holidays"
+sidebarTitle: "Configuration"
+description: "Use the Configuración tab in the admin dashboard to update professional schedules, add or remove services with pricing, and block public holidays — changes apply instantly."
+---
+
+The **Configuración** tab is where you control the live operating parameters of the ApiSquare Telegram bot. All edits are held in the dashboard's React state until you click **💾 Guardar configuración**, at which point the entire configuration object is sent to `PUT /api/admin/config` and stored in Vercel KV under the key `app:config`. The bot reads this key on every incoming Telegram message, so changes take effect immediately for the next user interaction — no server restart or redeployment is needed.
+
+## Services (Servicios)
+
+The **Servicios** section lists every service the bot offers during the booking flow. Each service entry has three fields:
+
+| Field | Type | Description |
+|---|---|---|
+| `nombre` | string | Display name shown to Telegram users |
+| `duracionMinutos` | number | Session length in minutes; determines how slots are blocked in the schedule |
+| `precio` | number | Price in local currency, displayed to users before they confirm |
+
+### Default services
+
+The following services ship with the default configuration:
+
+| Service | Duration | Price |
+|---|---|---|
+| Sesión de Quiropráctica | 25 min | $30,000 |
+| Masaje Relajante | 45 min | $30,000 |
+| Sesión Premium | 60 min | $55,000 |
+
+### Adding and removing services
+
+- **Add a service** — click **➕ Agregar servicio**. A new row appears with placeholder values (`Nuevo servicio`, 30 min, $5,000). Edit the fields inline and save.
+- **Delete a service** — click the 🗑️ trash icon on the right side of the service row.
+
+<Warning>
+  Deleting a service from the configuration does **not** cancel existing reservations that were booked under that service. It only removes the service from the bot's booking menu, so no new appointments can be made for it. Existing reservations remain in KV and continue to appear in the Reservas tab.
+</Warning>
+
+## Professional schedules (Horarios de profesionales)
+
+The **Horarios de profesionales** section lets you define the available working hours for each professional on a per-day, per-slot basis.
+
+### Schedule structure
+
+Schedules are keyed by professional name and then by weekday number (0 = Sunday through 6 = Saturday). Each day holds an array of time slots:
+
+| Field | Format | Description |
+|---|---|---|
+| `inicio` | `HH:MM` | Slot start time in 24-hour format |
+| `fin` | `HH:MM` | Slot end time in 24-hour format |
+
+Multiple slots per day are fully supported — for example, a morning block (`11:00`–`13:00`) and an afternoon block (`15:00`–`20:00`) can coexist on the same day. A day with no configured slots means the professional is unavailable on that day and it will not appear in the bot's calendar for them.
+
+### Navigating schedules
+
+Each professional's schedule lives inside a collapsible card identified by the professional's name and avatar initial. Click the card header to expand or collapse it. Within a professional's card, each weekday is also collapsible — click the day name to show or hide its slots.
+
+### Editing slots
+
+- **Add a slot** — click **➕ Agregar horario** next to the day name. A new slot row appears with default times (`09:00`–`10:00`). Use the time pickers to adjust the start and end times.
+- **Delete a slot** — click the 🗑️ icon on the slot row to remove it.
+
+## Holidays (Feriados)
+
+The **Feriados** section lets you block out specific calendar dates so that no appointments can be booked on those days, regardless of any professional's regular schedule.
+
+### Adding a holiday
+
+1. Select a date using the date picker input (renders the browser's native date picker).
+2. Click **➕ Agregar feriado**.
+
+The date is added to the `feriados` array in `YYYY-MM-DD` format and kept sorted chronologically. Each holiday appears as a badge showing the full formatted date.
+
+### Removing a holiday
+
+Click the **×** button on a holiday badge to remove it from the list. The change is staged in local state and only committed to KV when you save.
+
+Dates in the `feriados` array are checked by the bot's date-generation logic. Any date that matches a holiday is skipped in the available-dates calendar shown to Telegram users, regardless of which professional they have selected.
+
+## Saving changes
+
+All edits across Services, Professional Schedules, and Holidays are staged locally in the dashboard's React state. Nothing is persisted until you click the **💾 Guardar configuración** button, which is pinned to the bottom of the page as a sticky element for easy access.
+
+Clicking the button:
+1. Sends a `PUT /api/admin/config` request with the full configuration object as the JSON body.
+2. The API validates that `profesionales`, `feriados`, and `servicios` are all present.
+3. On success, the config is written to KV under `app:config` and a "Configuración guardada correctamente ✓" toast appears.
+
+If the request fails, a red error toast is shown and no data is lost — your unsaved edits remain in the dashboard's state so you can retry.
+
+<Tip>
+  Changes to services and schedules take effect immediately for all subsequent Telegram bot interactions — no restart required. You can update prices, add a new professional's time slots, or close a day of the week and it will be reflected the next time any user opens the bot.
+</Tip>
+
+<Note>
+  The default configuration (defined in `app/api/admin/config/route.ts`) is always used as a structural fallback — if KV returns a partial config, missing fields are merged in from the defaults. If KV is not configured at all, changes made in the Configuración tab are stored in Node.js in-process memory and will be lost on server restart.
+</Note>

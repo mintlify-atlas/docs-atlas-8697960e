@@ -1,47 +1,139 @@
 ---
-title: "Quickstart"
-description: "Begin with a guide on the fastest path to a successful outcome"
+title: "Get Started with ApiSquare in 5 Steps"
+sidebarTitle: "Quickstart"
+description: "Deploy ApiSquare to Vercel, configure your Telegram bot, and start accepting appointments in under 15 minutes."
 ---
 
-Describe how someone begins using your product. What is the first thing they need to do? Are there any prerequisites?
-
-A quickstart should take someone from zero to using your product. They'll get a quick win and a sense of what they can accomplish.
-
-## Prerequisites
-
-Before you begin, you must have:
-
-- Requirement one (for example, Node.js 18+, a free account, an API key)
-- Requirement two (for example, a compatible device, a compatible browser, a compatible operating system)
-
-## Get started
+By the end of this guide you will have a fully operational ApiSquare instance running on Vercel: a Telegram bot that accepts appointment bookings from your customers, a Vercel KV store persisting all reservations, and an admin dashboard you can log into from any browser. The entire setup — from cloning the repo to receiving your first `/start` message — takes under 15 minutes.
 
 <Steps>
-  <Step title="Install">
-    Describe how to install your product or sign up.
+
+  <Step title="Clone the repository">
+    Clone ApiSquare and install its dependencies:
 
     ```bash
-    npm install your-package
+    git clone https://github.com/shadownrx/apisquare.git
+    cd apisquare
+    npm install
     ```
+
+    The project uses Next.js 16 with the App Router. All source files live under `app/`, and the webhook handler is at `app/api/webhook/route.ts`.
   </Step>
-  <Step title="Configure">
-    Describe any setup or configuration needed before first use.
+
+  <Step title="Create a Telegram bot">
+    ApiSquare needs a bot token from Telegram's official bot management account:
+
+    1. Open Telegram and search for **@BotFather**.
+    2. Send `/newbot` and follow the prompts — choose a display name and a unique username ending in `bot`.
+    3. BotFather will reply with your bot token in the format `123456789:ABCDefGhIJKlmNoPQRstuVWXyz`.
+    4. Copy that token — you will use it as `TELEGRAM_TOKEN` in the next step.
+
+    Keep the token secret. Anyone who holds it can send and receive messages as your bot.
+  </Step>
+
+  <Step title="Set environment variables">
+    Create a `.env.local` file at the root of the project with the following variables:
 
     ```bash
-    your-cli init
+    TELEGRAM_TOKEN=your_bot_token_here
+    ADMIN_USERNAME=admin
+    ADMIN_PASSWORD=your_bcrypt_hash_or_plaintext
+    KV_REST_API_URL=https://...upstash.io
+    KV_REST_API_TOKEN=...
     ```
+
+    <Tip>
+      Store a bcrypt hash in `ADMIN_PASSWORD` instead of a plaintext password. ApiSquare automatically detects hash format: if the value starts with `$2b$` or `$2a$`, it uses `bcrypt.compare`; otherwise it falls back to a plain string comparison. Generate a secure hash with the bundled helper script:
+
+      ```bash
+      node scripts/generate-hash.js mysecretpassword
+      ```
+
+      The script prints the hash and a ready-to-paste `ADMIN_PASSWORD=` line. Copy it directly into `.env.local`.
+    </Tip>
+
+    `KV_REST_API_URL` and `KV_REST_API_TOKEN` are available from the **Storage** tab of your Vercel project after you create a KV database. See the [Environment Variables reference](/environment-variables) for the full list of supported variables.
   </Step>
-  <Step title="Run it">
-    Show the first thing a user does to see it working.
+
+  <Step title="Deploy to Vercel">
+    Deploy the project to a production Vercel environment:
 
     ```bash
-    your-cli start
+    npx vercel --prod
     ```
+
+    Vercel detects the `nextjs` framework automatically (configured in `vercel.json`). Before or after deploying, add the environment variables to Vercel so the production build can read them:
+
+    ```bash
+    # Add each variable interactively
+    vercel env add TELEGRAM_TOKEN
+    vercel env add ADMIN_USERNAME
+    vercel env add ADMIN_PASSWORD
+    vercel env add KV_REST_API_URL
+    vercel env add KV_REST_API_TOKEN
+    ```
+
+    Alternatively, set them through the **Settings → Environment Variables** panel in the Vercel dashboard, then redeploy.
   </Step>
+
+  <Step title="Register the Telegram webhook">
+    Tell Telegram to forward all bot updates to your deployment. Pass your Vercel app URL as the first argument:
+
+    ```bash
+    node setup-webhook.js https://your-app.vercel.app/api/webhook
+    ```
+
+    On success you will see:
+
+    ```
+    ✅ Webhook configurado exitosamente.
+       URL: https://your-app.vercel.app/api/webhook
+       Respuesta de Telegram: Webhook was set
+    ```
+
+    The script reads `TELEGRAM_TOKEN` from `.env` automatically (via `dotenv`). Make sure your `.env.local` variables are also present in a `.env` file, or export `TELEGRAM_TOKEN` to your shell before running the script.
+  </Step>
+
 </Steps>
 
-<Tip>
-  Give people a way to get help. This could be a link to a support page, a chat with a customer support agent, or a forum for your product.
+## Verify it works
 
-  Example: Need help? Reach out to us at [support@yourcompany.com](mailto:support@yourcompany.com).
-</Tip>
+Once the webhook is registered, run three quick checks to confirm everything is wired together correctly:
+
+**1. Test the Telegram bot**
+
+Open Telegram, find your bot by its username, and send `/start`. The bot should immediately reply with the main menu:
+
+```
+Hola 👋 ¿Qué necesitás?
+(Atención particular, sin obra social)
+
+[ 📋 Ver profesionales ]
+[ 📋 Ver servicios     ]
+[ 📅 Reservar turno   ]
+[ 📋 Mis reservas     ]
+```
+
+**2. Check the healthcheck endpoint**
+
+```bash
+curl https://your-app.vercel.app/api/healthcheck
+```
+
+Expected response:
+
+```json
+{
+  "status": "ok",
+  "message": "Bot de reservas está activo!",
+  "timestamp": "2025-01-01T12:00:00.000Z"
+}
+```
+
+**3. Log in to the admin dashboard**
+
+Navigate to `https://your-app.vercel.app/admin` in your browser and log in with the `ADMIN_USERNAME` and `ADMIN_PASSWORD` you configured. You should land on the reservations overview.
+
+<Note>
+  During local development (`npm run dev`), ApiSquare automatically falls back to in-memory storage when `KV_REST_API_URL` and `KV_REST_API_TOKEN` are absent from the environment. You can test the full booking flow locally without any KV credentials — just keep in mind that all data is lost when the dev server restarts.
+</Note>

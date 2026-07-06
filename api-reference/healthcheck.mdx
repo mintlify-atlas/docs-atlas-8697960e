@@ -1,0 +1,90 @@
+---
+title: "GET /api/healthcheck — Liveness Probe"
+sidebarTitle: "GET /api/healthcheck"
+description: "GET /api/healthcheck returns the service status and current timestamp. Use it as a liveness probe in your monitoring or load balancer health checks."
+---
+
+The `/api/healthcheck` endpoint is a lightweight liveness probe. It always returns `HTTP 200` with a JSON body confirming the service is running. No authentication is required, and the endpoint performs no database or external service calls — making it safe to poll frequently without side effects.
+
+## Request
+
+```bash
+curl https://your-app.vercel.app/api/healthcheck
+```
+
+## Response
+
+**HTTP 200 OK**
+
+```json
+{
+  "status": "ok",
+  "message": "Bot de reservas está activo!",
+  "timestamp": "2024-01-15T14:30:00.000Z"
+}
+```
+
+### Response Fields
+
+<ResponseField name="status" type="string" required>
+  Always `"ok"`. A value other than `"ok"` is never returned by this endpoint.
+</ResponseField>
+
+<ResponseField name="message" type="string" required>
+  Human-readable status message confirming the bot service is running.
+</ResponseField>
+
+<ResponseField name="timestamp" type="string" required>
+  ISO 8601 timestamp (UTC) of the exact moment the health check was performed. Generated from `new Date().toISOString()` at request time.
+</ResponseField>
+
+## Use Cases
+
+- **Vercel deployment health checks** — point Vercel's built-in health check URL at `/api/healthcheck` to gate traffic during deployments.
+- **Uptime monitoring** — configure tools like UptimeRobot or Betterstack to poll this endpoint every 60 seconds and alert on non-`200` responses.
+- **Webhook registration verification** — call this endpoint after registering the Telegram webhook to confirm the deployment is live and reachable before sending bot traffic.
+
+---
+
+## GET /api — Service Index
+
+The root API route (`GET /api`) returns a similar liveness payload along with a map of available public endpoints. Useful for a quick sanity check or service discovery.
+
+**Request**
+
+```bash
+curl https://your-app.vercel.app/api
+```
+
+**Response — HTTP 200 OK**
+
+```json
+{
+  "status": "ok",
+  "message": "Bot de reservas Square está activo!",
+  "endpoints": {
+    "webhook": "/api/webhook",
+    "healthcheck": "/api/healthcheck"
+  }
+}
+```
+
+<ResponseField name="status" type="string" required>
+  Always `"ok"`.
+</ResponseField>
+
+<ResponseField name="message" type="string" required>
+  Human-readable confirmation that the service is active.
+</ResponseField>
+
+<ResponseField name="endpoints" type="object" required>
+  A map of named public endpoint paths. Currently lists `webhook` and
+  `healthcheck`.
+</ResponseField>
+
+<Tip>
+  Both `GET /api` and `GET /api/healthcheck` are safe to use as uptime probe
+  targets. Prefer `/api/healthcheck` when you need the `timestamp` field for
+  latency tracking, and `GET /api` when you want to confirm endpoint paths
+  without consulting documentation.
+</Tip>

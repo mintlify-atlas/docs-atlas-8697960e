@@ -1,0 +1,60 @@
+---
+title: "ApiSquare: Telegram-Powered Appointment Booking"
+sidebarTitle: "Introduction"
+description: "ApiSquare combines a Telegram chatbot with a Next.js admin dashboard to handle appointment booking end-to-end, backed by Vercel KV for persistent storage."
+---
+
+ApiSquare is a full-stack appointment booking system that lets your customers schedule sessions directly inside Telegram — no app downloads, no web forms. A conversational bot guides users step-by-step through choosing a professional, picking a service, entering their name, selecting a date and time, and confirming the booking. Everything is stored in Vercel KV (Redis), surfaced to operators through a Next.js admin dashboard, and optionally synced to Google Calendar. It is built for clinics, wellness studios, or any service business that wants frictionless booking without a third-party scheduling SaaS.
+
+## Architecture Overview
+
+ApiSquare is composed of four tightly integrated layers that work together in real time:
+
+1. **Telegram Bot** — Users interact entirely through inline keyboard buttons and text messages. The bot holds per-user conversation state in Vercel KV so sessions survive server restarts and cold starts.
+2. **Next.js API Routes (App Router)** — A `POST /api/webhook` handler receives every Telegram update, drives the booking state machine, enforces rate limits, and persists reservations. A `GET /api/healthcheck` endpoint confirms liveness, and `/api/admin/*` routes back the dashboard.
+3. **Vercel KV (Redis)** — The single source of truth for conversation state (`conv:<chatId>`), reservations (`reserva:<professional>:<date>:<time>`), per-user reservation lists (`user:<chatId>:reservas`), rate-limit counters, and admin sessions. In local development the app falls back automatically to in-memory storage.
+4. **Admin Dashboard** — A Next.js page at `/admin` protected by bcrypt credentials and session cookies. Operators can view all reservations, manage configuration, and cancel bookings without touching the database directly.
+
+<CardGroup cols={2}>
+  <Card title="Telegram Bot" icon="telegram" href="/quickstart">
+    Inline-keyboard booking flow with conversation state stored in Vercel KV. Guides users through professional → service → name → date → time → confirm.
+  </Card>
+  <Card title="Admin Dashboard" icon="gauge" href="/environment-variables">
+    Password-protected web UI at `/admin`. bcrypt authentication with brute-force lockout (5 attempts → 15-minute lockout). Manage reservations and system config.
+  </Card>
+  <Card title="Vercel KV Integration" icon="database" href="/environment-variables#vercel-kv--redis-required-in-production">
+    Redis-backed persistence via `@vercel/kv`. Stores conversation state, reservations, rate-limit windows, and session tokens. Automatic in-memory fallback for local dev.
+  </Card>
+  <Card title="Google Calendar Integration" icon="calendar" href="/environment-variables#google-calendar-optional">
+    Optional sync of confirmed appointments to a Google Calendar via the Google service account or OAuth flow. Configurable target calendar ID.
+  </Card>
+</CardGroup>
+
+## Key Features
+
+- **Conversational booking flow** — The bot walks users through each step sequentially: select a professional → choose a service → enter your name → pick a date → pick a time slot → confirm. Each step is stored in KV so users can resume after interruptions.
+- **Real-time availability with overlap prevention** — Before displaying time slots, ApiSquare checks existing reservations for the chosen professional and date. Slots are generated from the professional's schedule and filtered by service duration, ensuring no two bookings ever overlap.
+- **Per-user rate limiting** — Each Telegram user is limited to 20 messages per 60-second window. Excess requests receive an immediate warning and are dropped before the booking logic runs.
+- **Per-user reservation cap** — A maximum of 2 active reservations per user is enforced. Attempting to book a third slot shows a friendly prompt to cancel an existing one first.
+- **Update deduplication** — Every incoming Telegram `update_id` is checked against KV (or an in-memory `Set` locally) before processing. Duplicate deliveries from Telegram are silently discarded, preventing double-bookings.
+- **bcrypt admin authentication with brute-force protection** — Admin login compares submitted passwords against a bcrypt hash stored in `ADMIN_PASSWORD`. After 5 consecutive failed login attempts from the same IP, the account is locked out for 15 minutes.
+- **In-memory fallback for local development** — When `KV_REST_API_URL` and `KV_REST_API_TOKEN` are absent, all storage (conversation state, reservations, sessions, rate limits) transparently falls back to in-process Maps and Sets. No Redis credentials are required to run the project locally.
+- **Optional Google Calendar integration** — Confirmed appointments can be pushed to a Google Calendar using a service account key or OAuth credentials. The target calendar is configurable via `GOOGLE_CALENDAR_ID`.
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Framework | Next.js 16 (App Router) |
+| Language | TypeScript |
+| Storage | Vercel KV (`@vercel/kv` 3.x) — Redis under the hood |
+| Bot API | Telegram Bot API via `axios` + `node-telegram-bot-api` |
+| Payments / Catalog | Square SDK (`square` 44.x) |
+| Admin Auth | `bcryptjs` 3.x |
+| Calendar Sync | `googleapis` 144.x |
+| Styling | Tailwind CSS |
+| Deployment | Vercel (framework: `nextjs`) |
+
+<Note>
+  All private appointment data, conversation state, and session tokens are stored exclusively in your own Vercel KV (Upstash Redis) instance. ApiSquare does not send customer data to any third-party analytics service. You remain in full control of your data.
+</Note>

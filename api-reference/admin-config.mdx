@@ -1,0 +1,209 @@
+---
+title: "GET and PUT /api/admin/config — Bot Configuration"
+sidebarTitle: "Admin Config"
+description: "GET /api/admin/config retrieves the current bot configuration. PUT replaces it with a new config including professionals, services, and holidays."
+---
+
+The `/api/admin/config` endpoint manages the live bot configuration — the professionals and their weekly schedules, available services, and public holidays. Changes made through this endpoint take effect immediately; the Telegram bot reads the configuration fresh from Vercel KV on every incoming message without requiring a deployment or restart. Both methods require admin authentication via the `admin_session` cookie.
+
+---
+
+## GET /api/admin/config
+
+Returns the active configuration, merged with built-in defaults to guarantee all required fields are present.
+
+### Request
+
+```bash
+curl https://your-app.vercel.app/api/admin/config \
+  -b cookies.txt
+```
+
+### Response
+
+**HTTP 200**
+
+```json
+{
+  "config": {
+    "profesionales": {
+      "Francisco Chibilisco": {
+        "1": [{ "inicio": "11:00", "fin": "13:00" }],
+        "4": [
+          { "inicio": "11:00", "fin": "13:00" },
+          { "inicio": "15:00", "fin": "20:00" }
+        ],
+        "6": [{ "inicio": "09:00", "fin": "13:00" }]
+      },
+      "Javier Martoni": {
+        "1": [{ "inicio": "15:30", "fin": "20:00" }],
+        "2": [{ "inicio": "15:30", "fin": "20:00" }]
+      }
+    },
+    "feriados": ["2024-01-01", "2024-12-25"],
+    "servicios": [
+      { "nombre": "Sesión de Quiropráctica", "duracionMinutos": 25, "precio": 30000 },
+      { "nombre": "Masaje Relajante", "duracionMinutos": 45, "precio": 30000 },
+      { "nombre": "Sesión Premium", "duracionMinutos": 60, "precio": 55000 }
+    ]
+  }
+}
+```
+
+The response merges the stored configuration with the compiled-in `DEFAULT_CONFIG`. This means every professional defined in the default config is always present in the response even if they were not explicitly stored in KV. Unrecognized top-level fields in the stored config are preserved.
+
+### Config object schema
+
+<ResponseField name="config" type="object">
+  The full bot configuration object.
+
+  <Expandable title="Config fields">
+    <ResponseField name="profesionales" type="object">
+      A map of professional full names to their weekly schedule. Each schedule is itself a map of **weekday number** (as a string key) to an array of time slots.
+
+      Weekday numbers follow JavaScript's `Date.getDay()` convention:
+
+      | Key | Day       |
+      | --- | --------- |
+      | `0` | Sunday    |
+      | `1` | Monday    |
+      | `2` | Tuesday   |
+      | `3` | Wednesday |
+      | `4` | Thursday  |
+      | `5` | Friday    |
+      | `6` | Saturday  |
+
+      Each time slot object has:
+
+      <Expandable title="TimeSlot fields">
+        <ResponseField name="inicio" type="string">
+          Slot start time in `HH:MM` 24-hour format (e.g. `"09:00"`).
+        </ResponseField>
+        <ResponseField name="fin" type="string">
+          Slot end time in `HH:MM` 24-hour format (e.g. `"13:00"`). The bot will not offer appointments that would end after this time.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+
+    <ResponseField name="feriados" type="string[]">
+      List of public holiday dates in `YYYY-MM-DD` format. The bot will not offer appointments on these dates regardless of the professional's schedule.
+    </ResponseField>
+
+    <ResponseField name="servicios" type="Service[]">
+      List of bookable services. The bot presents these as options during the booking flow.
+
+      <Expandable title="Service fields">
+        <ResponseField name="nombre" type="string">
+          Display name of the service (e.g. `"Masaje Relajante"`).
+        </ResponseField>
+        <ResponseField name="duracionMinutos" type="integer">
+          Duration of the service in minutes. Used to calculate available time slots within a professional's schedule window.
+        </ResponseField>
+        <ResponseField name="precio" type="integer">
+          Price of the service in local currency units (e.g. `30000`).
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Error responses
+
+| Status | Body                           | Reason                              |
+| ------ | ------------------------------ | ----------------------------------- |
+| 401    | `{ "error": "No autorizado" }` | Missing or invalid session cookie   |
+| 500    | `{ "error": "Error interno" }` | Unexpected server error             |
+
+---
+
+## PUT /api/admin/config
+
+Replaces the entire bot configuration stored in Vercel KV under the key `app:config`.
+
+<Warning>
+  PUT replaces the **entire** configuration. Always `GET` the current config first, apply your changes to the returned object, and then `PUT` the modified version. Sending a partial object will erase any fields you omit.
+</Warning>
+
+### Request
+
+```bash
+curl -X PUT https://your-app.vercel.app/api/admin/config \
+  -b cookies.txt \
+  -H "Content-Type: application/json" \
+  -d '{
+    "profesionales": {
+      "Francisco Chibilisco": {
+        "1": [{ "inicio": "11:00", "fin": "13:00" }],
+        "4": [{ "inicio": "11:00", "fin": "13:00" }, { "inicio": "15:00", "fin": "20:00" }],
+        "6": [{ "inicio": "09:00", "fin": "13:00" }]
+      }
+    },
+    "feriados": ["2024-01-01", "2024-12-25"],
+    "servicios": [
+      { "nombre": "Sesión de Quiropráctica", "duracionMinutos": 25, "precio": 30000 },
+      { "nombre": "Masaje Relajante", "duracionMinutos": 45, "precio": 30000 },
+      { "nombre": "Sesión Premium", "duracionMinutos": 60, "precio": 55000 }
+    ]
+  }'
+```
+
+### Request body
+
+The full config object as described in the GET response schema. All three top-level fields are required.
+
+<ParamField body="profesionales" type="object" required>
+  Map of professional name → weekly schedule. Same structure as returned by GET. Must be a non-null object.
+</ParamField>
+
+<ParamField body="feriados" type="array" required>
+  Array of holiday date strings in `YYYY-MM-DD` format. Pass an empty array (`[]`) if there are no holidays.
+</ParamField>
+
+<ParamField body="servicios" type="array" required>
+  Array of service objects (`{ nombre, duracionMinutos, precio }`). Must be a non-null array; passing an empty array will remove all bookable services from the bot.
+</ParamField>
+
+### Validation
+
+The server checks that the request body contains all three required top-level keys before persisting:
+
+- `profesionales` must be present and be an object.
+- `feriados` must be present and be an array.
+- `servicios` must be present and be an array.
+
+Returns HTTP 400 if any check fails.
+
+### Success response
+
+**HTTP 200**
+
+```json
+{
+  "success": true,
+  "config": { "...": "the exact config object you sent" }
+}
+```
+
+<ResponseField name="success" type="boolean">
+  Always `true` when the configuration was saved successfully.
+</ResponseField>
+
+<ResponseField name="config" type="object">
+  The configuration object exactly as persisted to Vercel KV (mirrors the PUT request body).
+</ResponseField>
+
+### Error responses
+
+| Status | Body                                              | Reason                              |
+| ------ | ------------------------------------------------- | ----------------------------------- |
+| 400    | `{ "error": "Estructura de configuración inválida" }` | Missing or wrong-typed top-level field |
+| 401    | `{ "error": "No autorizado" }`                    | Missing or invalid session cookie   |
+| 500    | `{ "error": "Error interno" }`                    | Unexpected server error             |
+
+### Storage details
+
+The configuration is persisted as a JSON string under the Vercel KV key `app:config`. No TTL is set — the value persists until the next PUT. In local development, when KV environment variables are absent, the config is stored in a server-side global variable (`global._localAppConfig`) and resets on process restart.
+
+<Note>
+  Because the Telegram bot reads `app:config` from KV on every incoming message, configuration changes applied via PUT take effect for the very next user interaction — no redeployment is required.
+</Note>

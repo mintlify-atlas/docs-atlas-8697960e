@@ -1,0 +1,53 @@
+---
+title: "Admin Dashboard Overview"
+sidebarTitle: "Overview"
+description: "The ApiSquare admin dashboard provides a web interface to view and manage all reservations and to configure professionals, services, and public holidays."
+---
+
+The ApiSquare admin dashboard is a secure, browser-based control panel accessible at `/admin`. It gives operators a single place to monitor every appointment booked through the Telegram bot, delete individual reservations, and make live changes to the system's services, professional schedules, and public holidays — all without touching any code or triggering a redeployment.
+
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="lock" href="/admin/authentication">
+    Set up admin credentials, understand the brute-force lockout system, and manage session lifecycle.
+  </Card>
+  <Card title="Managing Reservations" icon="calendar" href="/admin/managing-reservations">
+    View, filter, and delete appointments from the Reservas tab.
+  </Card>
+  <Card title="Configuration" icon="gear" href="/admin/configuration">
+    Edit services, professional schedules, and public holidays in real time.
+  </Card>
+  <Card title="API Reference" icon="code" href="/api-reference/admin-reservations">
+    Explore the raw `/api/admin/*` endpoints used by the dashboard.
+  </Card>
+</CardGroup>
+
+## Dashboard tabs
+
+The dashboard is split into two top-level tabs:
+
+| Tab | Label | Purpose |
+|---|---|---|
+| Reservas | 📋 Reservas | Operational view of all booked appointments |
+| Configuración | ⚙️ Configuración | Live editing of services, schedules, and holidays |
+
+Switching tabs triggers a fresh data fetch — the reservation list and the configuration are loaded independently on demand.
+
+## Stats overview
+
+At the top of the **Reservas** tab, three summary cards give an instant snapshot of the appointment pipeline:
+
+| Stat | Description |
+|---|---|
+| **Total** | Total number of reservations currently stored in KV |
+| **Hoy** | Reservations scheduled for today's date |
+| **Próximas** | All reservations on today or any future date |
+
+## Technical details
+
+The admin dashboard is built with the **Next.js App Router** (`app/admin/page.tsx`) as a fully client-rendered page (`'use client'`). Session state is carried by an HTTP-only cookie named `admin_session` with a **7-day TTL**. The underlying session token is validated against Vercel KV in production, and against a Node.js in-process `Set` in local development.
+
+All login attempts are subject to automatic **brute-force lockout**: after 5 consecutive failed attempts from the same IP address, further requests are blocked for 15 minutes.
+
+<Note>
+  The dashboard fetches data exclusively from the `/api/admin/*` endpoints. All admin API calls require the `admin_session` cookie to be present and valid — unauthenticated requests return HTTP **401** and the dashboard immediately redirects to `/login`.
+</Note>

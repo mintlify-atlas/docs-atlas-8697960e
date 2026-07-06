@@ -1,0 +1,128 @@
+---
+title: "POST /api/admin/login — Admin Authentication"
+sidebarTitle: "POST /api/admin/login"
+description: "POST /api/admin/login authenticates with username and password, sets the admin_session cookie, and returns 200 on success or 401/429 on failure."
+---
+
+Authenticate as an admin by posting credentials to `/api/admin/login`. On success, the server sets an `admin_session` HTTP-only cookie valid for 7 days. Pass this cookie on all subsequent admin API calls. The endpoint uses Vercel KV to persist the session token across serverless function instances, with an in-memory fallback for local development.
+
+## Request
+
+```bash
+curl -X POST https://your-app.vercel.app/api/admin/login \
+  -H "Content-Type: application/json" \
+  -c cookies.txt \
+  -d '{"username": "admin", "password": "yourpassword"}'
+```
+
+### Request body
+
+<ParamField body="username" type="string" required>
+  Admin username. Compared against the `ADMIN_USERNAME` environment variable; defaults to `admin` if the variable is not set.
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  Plaintext password. Compared against `ADMIN_PASSWORD` using `bcrypt.compare` when the stored value begins with `$2b$` or `$2a$`; otherwise a direct string comparison is performed.
+</ParamField>
+
+## Success response
+
+**HTTP 200**
+
+```json
+{ "success": true }
+```
+
+A `Set-Cookie` header is included with the following attributes:
+
+| Attribute   | Value                      |
+| ----------- | -------------------------- |
+| Name        | `admin_session`            |
+| `HttpOnly`  | `true`                     |
+| `SameSite`  | `Strict`                   |
+| `Max-Age`   | `604800` (7 days)          |
+| `Secure`    | `true` in production only  |
+| `Path`      | `/`                        |
+
+<ResponseField name="success" type="boolean">
+  Always `true` on a successful login.
+</ResponseField>
+
+## Error responses
+
+### HTTP 400 — Missing credentials
+
+Returned when either `username` or `password` is absent from the request body.
+
+```json
+{ "error": "Credenciales requeridas" }
+```
+
+<ResponseField name="error" type="string">
+  Human-readable error message.
+</ResponseField>
+
+---
+
+### HTTP 401 — Wrong credentials
+
+Returned when the username or password does not match.
+
+```json
+{
+  "error": "Credenciales incorrectas",
+  "remaining": 3,
+  "blocked": false
+}
+```
+
+<ResponseField name="error" type="string">
+  Human-readable error message.
+</ResponseField>
+
+<ResponseField name="remaining" type="integer">
+  Number of failed-login attempts remaining before the IP is locked out. When this reaches `0`, `blocked` is set to `true` and the next request returns HTTP 429.
+</ResponseField>
+
+<ResponseField name="blocked" type="boolean">
+  `true` when `remaining === 0`, indicating the IP address is now locked out for 15 minutes.
+</ResponseField>
+
+---
+
+### HTTP 429 — Brute-force lockout
+
+Returned when the IP address has exceeded the maximum number of failed attempts.
+
+```json
+{
+  "error": "Demasiados intentos fallidos. Intentá nuevamente en 15 minutos.",
+  "blocked": true,
+  "resetIn": 900
+}
+```
+
+<ResponseField name="error" type="string">
+  Human-readable error message, including the remaining wait time in minutes.
+</ResponseField>
+
+<ResponseField name="blocked" type="boolean">
+  Always `true` on HTTP 429.
+</ResponseField>
+
+<ResponseField name="resetIn" type="integer">
+  Seconds remaining until the lockout expires and the IP may attempt to log in again.
+</ResponseField>
+
+## Brute-force protection
+
+The endpoint tracks failed login attempts per IP address using Vercel KV, with a `Map`-based in-memory store as a local development fallback.
+
+| Parameter       | Value                                    |
+| --------------- | ---------------------------------------- |
+| Max attempts    | **5** per IP                             |
+| Lockout period  | **15 minutes** (900 seconds)             |
+| KV key pattern  | `ratelimit:login:{ip}` with 15-min TTL   |
+| Reset trigger   | Counter is cleared on successful login   |
+
+The IP address is resolved from the `X-Forwarded-For` header (first entry) or `X-Real-IP`. It falls back to `127.0.0.1` when neither header is present.

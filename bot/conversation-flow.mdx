@@ -1,0 +1,173 @@
+---
+title: "Telegram Bot Conversation Flow and State Machine"
+sidebarTitle: "Conversation Flow"
+description: "ApiSquare's booking bot walks users through a multi-step inline-keyboard flow. Each step is persisted in Vercel KV so users can resume across sessions."
+---
+
+ApiSquare's bot uses a state-machine approach to guide users through the appointment booking process. The current conversation state for each user is stored in Vercel KV under the key `conv:{chatId}` as a JSON object. Every time a user taps a button or sends a message, the handler reads this state to determine where in the flow the user is, performs the appropriate action, and writes the next state back to KV before replying. Because state is stored server-side, users can close the Telegram app mid-booking and pick up exactly where they left off.
+
+---
+
+## Conversation Steps
+
+<Steps>
+  <Step title="Main Menu">
+    The flow begins (or resets) whenever a user sends `/start` or any recognized greeting word (`hola`, `hello`, `hey`, `buenos días`, `buenas tardes`, `buenas noches`). The handler calls `clearState()` to delete any existing `conv:{chatId}` key, then presents the main menu:
+
+    - 📋 **Ver profesionales** — list all professionals
+    - 📋 **Ver servicios** — list all services and prices
+    - 📅 **Reservar turno** — begin a new booking
+    - 📋 **Mis reservas** — view and manage existing reservations
+
+    State after this step: none (KV key is absent or cleared).
+  </Step>
+
+  <Step title="Select Professional">
+    Triggered by tapping **Reservar turno** (callback `reservar`) or by the text command `reservar`. Before showing the professional list, the bot checks whether the user already has 2 active bookings. If the limit is reached, a warning is shown instead.
+
+    The user picks a professional from the inline keyboard. State saved to KV:
+
+    ```json
+    { "paso": "servicio", "profesional": "Francisco Chibilisco" }
+    ```
+  </Step>
+
+  <Step title="Select Service">
+    The bot presents all configured services as inline-keyboard buttons. The user picks one. State saved to KV:
+
+    ```json
+    { "paso": "nombre", "servicio": "Masaje Relajante", "profesional": "Francisco Chibilisco" }
+    ```
+
+    If the user already has a `nombre` and `fecha` in state (e.g., they are changing a service mid-flow), the bot skips the name step and jumps directly to time-slot selection.
+  </Step>
+
+  <Step title="Enter Name">
+    This is the only step that requires free-text input. The bot asks: *¿Cuál es tu nombre?* and stores whatever the user types. State saved to KV:
+
+    ```json
+    { "paso": "fecha", "nombre": "María García", "servicio": "Masaje Relajante", "profesional": "Francisco Chibilisco" }
+    ```
+  </Step>
+
+  <Step title="Select Date">
+    The bot calls `proximosDiasLaborables(8, profesional)` to find the next 8 working days for the chosen professional, skipping holidays and days when the professional has no configured schedule. The dates are presented two per row as inline-keyboard buttons with human-friendly labels (`Hoy`, `Mañana`, or `Mié 18 Jun`).
+
+    State saved to KV after the user taps a date:
+
+    ```json
+    { "paso": "hora", "fecha": "2025-06-18", "nombre": "María García", "servicio": "Masaje Relajante", "profesional": "Francisco Chibilisco" }
+    ```
+  </Step>
+
+  <Step title="Select Time Slot">
+    The bot calls `obtenerHorariosLibres(fecha, profesional, servicio)` to compute all available time slots for the selected date, service duration, and professional's schedule. Slots are displayed in rows of 3 buttons. Real-time overlap checking via `haySolapamiento` ensures only genuinely free slots are shown.
+
+    If no slots are available on the selected date, the bot shows an **Otra fecha** button and returns to date selection.
+
+    State saved to KV after the user taps a slot:
+
+    ```json
+    { "paso": "confirmar", "hora": "15:30", "fecha": "2025-06-18", "nombre": "María García", "servicio": "Masaje Relajante", "profesional": "Francisco Chibilisco" }
+    ```
+
+    Before transitioning, the handler calls `verificarDisponibilidad` one more time. If the slot was just taken by another user, the bot refreshes the slot list and shows a warning instead.
+  </Step>
+
+  <Step title="Confirm Booking">
+    The bot shows a full summary of the booking including the service price, formatted date, and a note that the clinic does not accept health insurance. The user taps **✅ Confirmar** or **❌ Cancelar**:
+
+    - **Confirmar** → triggers the `confirmar_reserva` callback.
+    - **Cancelar** → returns to date selection (`cambiar_fecha` callback).
+
+    Availability is verified a final time at confirmation to handle the race condition where the slot was booked by someone else while the user was reading the summary.
+  </Step>
+
+  <Step title="Booking Confirmed">
+    On successful confirmation, `guardarReserva` writes the reservation to KV under three keys (see the [State Keys](#state-keys) section below), `clearState()` removes `conv:{chatId}`, and the bot sends a success message:
+
+    ```
+    🎉 ¡Reserva confirmada!
+
+    👨‍⚕️ Francisco Chibilisco
+    ✨ Masaje Relajante
+    📅 miércoles, 18 de junio de 2025
+    🕐 15:30
+    👤 María García
+
+    ¡Nos vemos! 😊
+    ```
+
+    Buttons for **Mis reservas** and **Menú principal** are shown so the user can immediately check their bookings or start again.
+  </Step>
+</Steps>
+
+---
+
+## State Keys
+
+The following Vercel KV keys are used during and after the booking flow:
+
+| Key | Description | TTL |
+|---|---|---|
+| `conv:{chatId}` | Current conversation state JSON object | None (cleared on confirm or cancel) |
+| `reserva:{profesional}:{fecha}:{hora}` | Full reservation object indexed by slot | 30 days |
+| `reserva:id:{id}` | Full reservation object indexed by unique ID | 30 days |
+| `user:{chatId}:reservas` | JSON array of all reservations belonging to the user | None |
+| `ratelimit:user:{chatId}` | Rate-limit counter `{ count, windowStart }` | 60 seconds |
+| `processed:update:{updateId}` | Deduplication marker for a processed `update_id` | 600 seconds (10 min) |
+
+---
+
+## Callback Data Format
+
+Every inline-keyboard button carries a `callback_data` string that the webhook handler pattern-matches to decide what to do next.
+
+| Callback Data | Meaning |
+|---|---|
+| `menu` | Return to main menu and clear conversation state |
+| `profesionales` | Display the list of all professionals |
+| `servicios` | Display the list of all services with prices |
+| `reservar` | Start the booking flow (step: select professional) |
+| `misreservas` | Show the user's active reservations |
+| `profesional:{name}` | Select a professional by name, e.g. `profesional:Javier Martoni` |
+| `servicio:{name}` | Select a service by name, e.g. `servicio:Sesión Premium` |
+| `fecha:{YYYY-MM-DD}` | Select a date, e.g. `fecha:2025-06-18` |
+| `hora:{HH:MM}` | Select a time slot, e.g. `hora:15:30` |
+| `confirmar_reserva` | Confirm and persist the reservation to KV |
+| `cambiar_fecha` | Return to date selection, preserving professional/service/name in state |
+| `eliminar:{id}` | Cancel and delete the reservation with the given ID |
+| `noop` | No-op button used for informational display only (e.g. reservation row labels) |
+
+---
+
+## Rate Limiting
+
+Each user is allowed a maximum of **20 interactions per 60-second window**. The per-user counter is stored in KV as a `{ count, windowStart }` JSON object under `ratelimit:user:{chatId}` with a 60-second TTL.
+
+When a new message or callback arrives, `checkUserRateLimit(chatId)` is called before any other processing:
+
+1. If no key exists for the user, a new counter is written with `count: 1` and the current timestamp.
+2. If the current timestamp is more than 60 seconds past `windowStart`, the counter resets to `count: 1`.
+3. If `count` is already at or above 20, the function returns `true` (blocked) and the handler sends a warning without processing the update.
+4. Otherwise, `count` is incremented and saved back.
+
+When rate-limited, callback queries receive a brief `answerCallbackQuery` alert (`⚠️ Demasiadas solicitudes. Esperá un momento.`) so the Telegram loading indicator disappears. Text message senders receive a plain warning message.
+
+---
+
+## Availability Algorithm
+
+Time-slot availability is calculated by `obtenerHorariosLibres(fechaStr, profesional, servicioNombre)`:
+
+1. **Look up the professional's schedule** for the day-of-week using `getHorarioProfesional(profesional, dayOfWeek)`. This returns an array of `{ inicio, fin }` time windows (e.g. `[{ inicio: "11:00", fin: "13:00" }, { inicio: "15:00", fin: "20:00" }]`).
+2. **Look up the service duration** using `getServicio(servicioNombre)`. For example, *Masaje Relajante* has a 45-minute duration.
+3. **Iterate each time window** in increments equal to the service duration. Starting from `inicio` in minutes, the loop generates candidate slots as long as `currentMinutes + duracionMinutos ≤ finMinutes`.
+4. **Check each candidate slot** for overlap by calling `haySolapamiento(profesional, fechaStr, slotStart, slotEnd)`. This function fetches all existing reservations for that professional on that date from KV (via a `keys()` pattern scan) and checks whether any existing booking's time interval `[reservaStart, reservaStart + duracion)` overlaps with the candidate `[slotStart, slotEnd)`.
+5. **Collect free slots** — only slots that pass the overlap check are added to the returned array, which is then rendered as inline-keyboard buttons (3 per row).
+
+This real-time check means that as soon as one user confirms a booking, that slot disappears from the keyboard shown to any other user browsing the same date.
+
+<Note>
+  Free-text commands (`/start`, `/servicios`, `/reservar`, `/misreservas`, and their variations) are fully supported alongside inline-keyboard buttons. Users who prefer typing can drive the entire flow from the keyboard — the state machine handles both input methods identically.
+</Note>

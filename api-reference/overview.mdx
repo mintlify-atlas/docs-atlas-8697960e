@@ -1,0 +1,64 @@
+---
+title: "ApiSquare HTTP API Reference"
+sidebarTitle: "Overview"
+description: "ApiSquare exposes REST endpoints for Telegram webhook delivery, health checks, and admin operations. Admin endpoints require a session cookie obtained via POST /api/admin/login."
+---
+
+ApiSquare's HTTP API is built with Next.js App Router route handlers. Every endpoint returns JSON. Public endpoints require no authentication. Admin endpoints require an `admin_session` cookie, which is issued as an `HttpOnly` cookie when you call `POST /api/admin/login` with valid credentials. All requests and responses use `Content-Type: application/json`.
+
+## Base URL
+
+```
+https://your-deployment.vercel.app
+```
+
+## All Endpoints
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/api` | None | Service info and endpoint list |
+| `GET` | `/api/healthcheck` | None | Liveness probe |
+| `POST` | `/api/webhook` | None (Telegram signature) | Telegram webhook receiver |
+| `GET` | `/api/webhook` | None | Webhook verification no-op |
+| `POST` | `/api/admin/login` | None | Authenticate and get session cookie |
+| `POST` | `/api/admin/logout` | Session cookie | Invalidate session |
+| `GET` | `/api/admin/reservations` | Session cookie | List all reservations |
+| `DELETE` | `/api/admin/reservations` | Session cookie | Delete a reservation by ID |
+| `GET` | `/api/admin/config` | Session cookie | Get bot configuration |
+| `PUT` | `/api/admin/config` | Session cookie | Update bot configuration |
+
+## Authentication
+
+ApiSquare uses two authentication tiers:
+
+**Public endpoints** — `/api`, `/api/healthcheck`, `GET /api/webhook`, and `POST /api/webhook` — require no authentication. Telegram delivers webhook updates to `POST /api/webhook` without any API key; the endpoint trusts the Telegram platform directly.
+
+**Admin endpoints** — every route under `/api/admin/` except `POST /api/admin/login` — require a valid `admin_session` cookie:
+
+1. Call `POST /api/admin/login` with your admin credentials.
+2. On success, the server sets an `HttpOnly admin_session` cookie in the response.
+3. Include that cookie with every subsequent admin request.
+4. Session tokens are stored in Vercel KV with a **7-day TTL**.
+5. Call `POST /api/admin/logout` to invalidate the session immediately.
+
+Requests to admin endpoints that lack a valid session cookie return:
+
+```json
+{ "error": "No autorizado" }
+```
+
+with an `HTTP 401` status code.
+
+## Response Format
+
+All responses are `application/json`. Successful responses vary by endpoint and are documented on each individual endpoint page. Error responses always follow this shape:
+
+```json
+{ "error": "<description>" }
+```
+
+<Note>
+  The Telegram webhook endpoint (`POST /api/webhook`) always returns `HTTP 200`
+  with `{"status":"ok"}` — even when an internal error occurs — to prevent
+  Telegram from retrying the same update.
+</Note>

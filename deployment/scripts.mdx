@@ -1,0 +1,143 @@
+---
+title: "ApiSquare Utility Scripts Reference"
+sidebarTitle: "Scripts"
+description: "ApiSquare ships with utility scripts for webhook registration, webhook verification, and admin password hashing. Run them with Node.js from the project root."
+---
+
+ApiSquare includes several Node.js scripts for one-off setup and maintenance tasks. None of these scripts are part of the production application — they are run locally from the project root before or after deployment. All scripts call `require('dotenv').config()` at startup, so they automatically load environment variables from a `.env` or `.env.local` file without any extra flags.
+
+---
+
+## `setup-webhook.js` — Register the Telegram Webhook
+
+Registers your deployment URL as the Telegram webhook endpoint. Telegram will POST every bot update to this URL going forward.
+
+```bash
+node setup-webhook.js <webhook-url>
+# or via npm:
+npm run setup-webhook -- <webhook-url>
+```
+
+**How it works:**
+
+- Reads `TELEGRAM_TOKEN` from the environment (loaded via `dotenv`)
+- Accepts the target webhook URL as a positional command-line argument
+- POSTs to `https://api.telegram.org/bot{token}/setWebhook` using `axios`
+- Exits with code `1` and prints an error if the token is missing, no URL is provided, or the Telegram API returns a failure
+
+**Example:**
+
+```bash
+node setup-webhook.js https://my-app.vercel.app/api/webhook
+# ✅ Webhook configurado exitosamente.
+#    URL: https://my-app.vercel.app/api/webhook
+#    Respuesta de Telegram: Webhook was set
+```
+
+<Warning>
+This script must be re-run every time your deployment URL changes (for example, after a redeployment to a new Vercel URL or a new preview deployment). Only one webhook URL can be active at a time per bot token.
+</Warning>
+
+---
+
+## `verificar-webhook.js` — Check Current Webhook Status
+
+Queries the Telegram Bot API for the currently registered webhook and prints a summary of its status. Useful for diagnosing delivery failures or confirming that the correct URL is active.
+
+```bash
+node verificar-webhook.js
+```
+
+**Output includes:**
+
+- The currently configured webhook URL (or `Ninguna` if none is set)
+- The number of pending updates queued for delivery
+- The last error message reported by Telegram, if any
+
+**Example output:**
+
+```
+✅ Estado del webhook:
+   URL configurada: https://my-app.vercel.app/api/webhook
+   Último error: Ninguno
+   Actualizaciones pendientes: 0
+```
+
+This script reads `TELEGRAM_TOKEN` from the environment and calls `getWebhookInfo` via a GET request. No arguments are required.
+
+---
+
+## `configurar-webhook-facil.js` — Alternative Webhook Setup
+
+A simplified alternative to `setup-webhook.js` that has the target URL hardcoded in the script rather than read from a command-line argument.
+
+```bash
+node configurar-webhook-facil.js
+```
+
+The script targets `https://apisquare.vercel.app/api/webhook` by default and is intended for use when you want a quick, argument-free registration against a stable production URL. It prints the token prefix (first 10 characters) before making the request so you can confirm the correct bot is being configured.
+
+<Note>
+If you are deploying to a custom domain or a different Vercel project URL, edit the `WEBHOOK_URL` constant at the top of `configurar-webhook-facil.js` before running it, or use `setup-webhook.js` instead, which accepts the URL as a command-line argument.
+</Note>
+
+---
+
+## `scripts/generate-hash.js` — Hash an Admin Password with bcrypt
+
+Generates a bcrypt hash of a plain-text password for use as the `ADMIN_PASSWORD` environment variable. ApiSquare's admin login route detects the `$2b$` prefix and uses `bcrypt.compare()` to validate credentials at runtime — the plain-text password is never stored anywhere.
+
+```bash
+node scripts/generate-hash.js <password>
+```
+
+The script uses `bcryptjs` with a cost factor of `10`.
+
+**Example output:**
+
+```
+✅ Hash generado:
+
+$2b$10$abc123...
+
+Copia esta línea en tu .env:
+
+ADMIN_PASSWORD=$2b$10$abc123...
+```
+
+Copy the full `ADMIN_PASSWORD=...` line into your `.env.local` for local development, or paste just the hash value when setting the variable via `vercel env add ADMIN_PASSWORD production`.
+
+---
+
+## `scripts/get-google-refresh-token.js` — Obtain a Google OAuth2 Refresh Token
+
+A one-time interactive script that walks you through the Google OAuth2 consent flow and exchanges an authorization code for a long-lived refresh token. This token is required for ApiSquare's Google Calendar integration.
+
+```bash
+node scripts/get-google-refresh-token.js
+```
+
+**How it works:**
+
+1. Constructs an OAuth2 authorization URL scoped to `https://www.googleapis.com/auth/calendar` using the configured `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`
+2. Prints the URL and instructs you to open it in a browser
+3. After you grant access, Google redirects to `http://localhost:3000` with a `code` query parameter
+4. The script prompts you to paste that authorization code into the terminal
+5. It exchanges the code for tokens and prints:
+   ```
+   GOOGLE_REFRESH_TOKEN=1//04abc123...
+   ```
+
+Add the printed value to your Vercel environment variables:
+
+```bash
+vercel env add GOOGLE_REFRESH_TOKEN production
+```
+
+<Note>
+This script is for one-time setup only. The refresh token it produces is long-lived and does not expire unless access is revoked. Store it as a Vercel environment variable rather than committing it to your repository.
+</Note>
+
+<Warning>
+Do not commit any `.env` file or any script with hardcoded credentials to version control. The `get-google-refresh-token.js` script contains placeholder credential constants — replace them with values from your own Google Cloud project and ensure the file is listed in `.gitignore` if you customize it.
+</Warning>

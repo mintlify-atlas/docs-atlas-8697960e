@@ -1,0 +1,92 @@
+---
+title: "ApiSquare Telegram Bot: How It Works"
+sidebarTitle: "Overview"
+description: "The ApiSquare Telegram bot handles end-to-end appointment booking through an interactive inline-keyboard conversation flow, with rate limiting and deduplication built in."
+---
+
+ApiSquare is a Telegram-powered appointment booking system built on Next.js. When a user sends a message or taps an inline-keyboard button in the Telegram chat, Telegram delivers the update as an HTTP POST request to your deployed app at `POST /api/webhook`, which is handled by the Next.js route handler in `app/api/webhook/route.ts`. From there, the bot reads and writes conversation state in Vercel KV, enforces per-user rate limits, deduplicates repeated updates, and replies to users through the Telegram Bot API — all without requiring any free-text input beyond the user's name during booking.
+
+## Bot Capabilities
+
+### Menu Commands
+
+Users can interact with the bot through the following text commands or the equivalent inline-keyboard buttons. All commands are case-insensitive:
+
+| Command / Text | What It Does |
+|---|---|
+| `/start`, `hola`, `hello`, `hey`, `buenos días`, `buenas tardes`, `buenas noches` | Clears conversation state and displays the main menu |
+| `/reservar`, `reservar`, `reservar turno`, `quiero reservar`, `agendar`, `hacer una reserva` | Starts the booking flow |
+| `/servicios`, `servicios`, `servicio`, `que servicios hay` | Lists all available services and their prices |
+| `/misreservas`, `mis reservas`, `misreservas`, `reservas`, `ver reservas` | Shows the user's active reservations |
+
+### Inline Keyboard Navigation
+
+Every step in the booking flow is presented as an inline-keyboard button grid. Users never need to type a service name, professional name, date, or time — they simply tap a button. Free-text entry is only required at one step: the user's name. This design eliminates input errors and keeps the conversation flowing predictably.
+
+### Multi-Step Booking State Machine
+
+The booking flow is a state machine whose current position is persisted in Vercel KV under the key `conv:{chatId}`. Each step transitions to the next when the user makes a selection, and the state is automatically cleared when a booking is confirmed or cancelled. Because state lives in KV, users can close Telegram and resume the flow later without starting over.
+
+### Per-User Rate Limiting
+
+Each user is limited to **20 messages per 60-second window**. The counter is stored in KV under `ratelimit:user:{chatId}` with a 60-second TTL. When the limit is exceeded, the bot immediately sends a warning and discards the message without processing it:
+
+- For text messages: a plain warning message is sent to the chat.
+- For callback queries (button taps): the callback is answered with a brief alert so the Telegram spinner disappears.
+
+### Per-User Reservation Limit
+
+A single Telegram user may hold a maximum of **2 active bookings** at any time. Attempting to start a new booking while at the limit shows an error message and directs the user to cancel an existing reservation first.
+
+### Update Deduplication
+
+Telegram may occasionally deliver the same update more than once. ApiSquare deduplicates by tracking processed `update_id` values in KV under the key `processed:update:{updateId}` with a **10-minute TTL** (600 seconds). Any update with an already-seen `update_id` is silently acknowledged and discarded, preventing the same message from being handled twice.
+
+---
+
+## Data Flow
+
+The following steps describe what happens from the moment Telegram sends an update until the bot replies:
+
+1. **Telegram delivers the update** — Telegram POSTs a JSON payload containing either a `message` (text input) or a `callback_query` (button tap) to `https://your-app.vercel.app/api/webhook`.
+2. **Route handler receives the request** — The Next.js `POST` handler in `app/api/webhook/route.ts` parses the JSON body.
+3. **Deduplication check** — The handler looks up `processed:update:{updateId}` in KV. If the key exists, the update is a duplicate and a `{"status":"ok"}` response is returned immediately. Otherwise, the key is written with a 600-second TTL.
+4. **Rate-limit check** — The handler reads `ratelimit:user:{chatId}` from KV. If the user has exceeded 20 messages in the current 60-second window, a warning is sent and the handler returns early.
+5. **Process message or callback** — Depending on whether the update contains a `message` or a `callback_query`, the appropriate branch of the handler runs: it reads the current conversation state from KV, determines the right action, and updates the state.
+6. **Send reply via Telegram Bot API** — The handler calls `https://api.telegram.org/bot{token}/sendMessage` (via Axios) with the response text and optional inline keyboard. For callback queries, `answerCallbackQuery` is called first to dismiss the loading spinner in Telegram.
+
+---
+
+## Default Configuration
+
+ApiSquare ships with the following professionals and services pre-configured in `DEFAULT_CONFIG`. This configuration is loaded from Vercel KV at runtime (key: `app:config`) and falls back to these defaults if no custom configuration has been saved.
+
+### Professionals and Schedules
+
+Day numbers follow JavaScript's `Date.getDay()` convention: `1` = Monday … `6` = Saturday.
+
+**Francisco Chibilisco**
+
+| Day | Time Slots |
+|---|---|
+| Monday – Wednesday | 11:00–13:00 |
+| Thursday – Friday | 11:00–13:00 and 15:00–20:00 |
+| Saturday | 09:00–13:00 |
+
+**Javier Martoni**
+
+| Day | Time Slots |
+|---|---|
+| Monday – Friday | 15:30–20:00 |
+
+### Services
+
+| Service | Duration | Price |
+|---|---|---|
+| Sesión de Quiropraxia | 25 min | $30,000 |
+| Masaje Relajante | 45 min | $30,000 |
+| Sesión Premium | 60 min | $55,000 |
+
+<Note>
+  The bot configuration — including professionals, their schedules, services, prices, and holidays — can be modified at runtime through the admin dashboard without redeploying the application. Changes are written to Vercel KV under the key `app:config` and take effect immediately.
+</Note>

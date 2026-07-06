@@ -1,0 +1,104 @@
+---
+title: "Environment Variables Reference for ApiSquare"
+sidebarTitle: "Environment Variables"
+description: "Complete reference for all environment variables required and optional in ApiSquare, including Telegram, admin auth, Vercel KV, and Google Calendar settings."
+---
+
+ApiSquare is configured entirely through environment variables — there are no config files to edit. In development, place them in a `.env.local` file at the project root (Next.js loads this automatically). In production, add them via the Vercel dashboard under **Settings → Environment Variables**, or with the Vercel CLI using `vercel env add`. The sections below document every variable the application reads, grouped by subsystem.
+
+<Warning>
+  Never commit `.env.local` to version control. It contains secrets (bot tokens, KV credentials, admin passwords) that would grant full access to your bot and data store. Ensure `.env.local` is listed in your `.gitignore` before your first commit.
+</Warning>
+
+<Tip>
+  Run `vercel env pull .env.local` to pull all environment variables configured in your Vercel project down to your local machine in one step. This keeps your local secrets in sync with production without manual copying.
+</Tip>
+
+---
+
+## Telegram Bot (Required)
+
+<ParamField path="TELEGRAM_TOKEN" type="string" required>
+  The bot token issued by @BotFather when you create a new Telegram bot. It follows the format `123456789:ABCDefGhIJKlmNoPQRstuVWXyz`. This token is required for the webhook handler at `POST /api/webhook` to receive incoming updates and send replies back to users. Without it, the bot cannot communicate with Telegram at all.
+</ParamField>
+
+---
+
+## Admin Authentication (Required)
+
+<ParamField path="ADMIN_USERNAME" type="string">
+  The username accepted by the admin login form at `/login`. Defaults to `admin` if not set. Change this to a less guessable value in any internet-facing deployment.
+</ParamField>
+
+<ParamField path="ADMIN_PASSWORD" type="string" required>
+  The password for the admin account. ApiSquare supports two formats:
+
+  - **Bcrypt hash** — if the value starts with `$2b$` or `$2a$`, the login handler uses `bcrypt.compare` to verify the submitted password against the stored hash. This is the recommended approach.
+  - **Plaintext** — if the value does not start with a bcrypt prefix, a direct string comparison is used. Acceptable for local development only.
+
+  Generate a bcrypt hash (cost factor 10) with the bundled script:
+
+  ```bash
+  node scripts/generate-hash.js mysecretpassword
+  ```
+
+  The script prints the hash and a ready-to-paste `ADMIN_PASSWORD=` line. Paste the result directly into your `.env.local` or Vercel environment variables.
+
+  After 5 consecutive failed login attempts from the same IP address, the login endpoint returns HTTP 429 and blocks further attempts for 15 minutes.
+</ParamField>
+
+---
+
+## Vercel KV / Redis (Required in production)
+
+<ParamField path="KV_REST_API_URL" type="string">
+  The HTTPS REST endpoint for your Vercel KV (Upstash Redis) store. It looks like `https://<name>-<region>.upstash.io`. Found in the Vercel dashboard under **Storage → your KV database → .env.local**.
+
+  ApiSquare uses this store for:
+  - Conversation state keys (`conv:<chatId>`)
+  - Reservation records (`reserva:<professional>:<date>:<time>` and `reserva:id:<id>`)
+  - Per-user reservation lists (`user:<chatId>:reservas`)
+  - Rate-limit counters (`ratelimit:user:<chatId>` and `ratelimit:login:<ip>`)
+  - Update deduplication keys (`processed:update:<updateId>`)
+  - Admin session tokens (`session:<token>`)
+</ParamField>
+
+<ParamField path="KV_REST_API_TOKEN" type="string">
+  The authentication token for the Vercel KV REST API. Passed as the `token` field to `@vercel/kv`'s `createClient`. Found alongside `KV_REST_API_URL` in the Vercel dashboard.
+
+  If either `KV_REST_API_URL` or `KV_REST_API_TOKEN` is missing, the application automatically falls back to in-memory storage using JavaScript `Map` and `Set` objects. This fallback is intentional for local development — **all data is lost on process restart** and multiple Vercel serverless instances will not share state. Always configure KV credentials in production.
+</ParamField>
+
+---
+
+## Google Calendar (Optional)
+
+<ParamField path="GOOGLE_SERVICE_ACCOUNT_KEY" type="string">
+  The full JSON content of a Google service account key file, provided as a single-line string. Used by the Calendar API integration to authenticate as a service account and create calendar events when appointments are confirmed. Example format:
+
+  ```
+  GOOGLE_SERVICE_ACCOUNT_KEY={"type":"service_account","project_id":"...","private_key":"-----BEGIN RSA PRIVATE KEY-----\n...","client_email":"...@....iam.gserviceaccount.com",...}
+  ```
+
+  If this variable is not set, Google Calendar sync is disabled and appointments are only stored in Vercel KV.
+</ParamField>
+
+<ParamField path="GOOGLE_CALENDAR_ID" type="string">
+  The ID of the Google Calendar to which confirmed appointments should be written. Defaults to `primary` (the calendar owner's default calendar) when not specified. You can find a calendar's ID in Google Calendar under **Settings → [Calendar name] → Calendar ID**.
+</ParamField>
+
+<ParamField path="GOOGLE_CLIENT_ID" type="string">
+  The OAuth 2.0 client ID from the Google Cloud Console. Used by the OAuth refresh-token helper script when setting up delegated calendar access. Not required if you are using a service account key (`GOOGLE_SERVICE_ACCOUNT_KEY`).
+</ParamField>
+
+<ParamField path="GOOGLE_CLIENT_SECRET" type="string">
+  The OAuth 2.0 client secret paired with `GOOGLE_CLIENT_ID`. Used by the OAuth refresh-token helper script. Not required for service account authentication.
+</ParamField>
+
+---
+
+## Runtime
+
+<ParamField path="NODE_ENV" type="string">
+  The Node.js runtime environment. Set to `production` automatically by Vercel during deployment builds. ApiSquare uses this value to control the `secure` flag on the `admin_session` cookie — the flag is enabled only when `NODE_ENV === 'production'`, ensuring the cookie is transmitted exclusively over HTTPS in production while remaining accessible over plain HTTP during local development.
+</ParamField>

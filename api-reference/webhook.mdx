@@ -1,0 +1,174 @@
+---
+title: "POST /api/webhook — Telegram Webhook Receiver"
+sidebarTitle: "POST /api/webhook"
+description: "POST /api/webhook receives Telegram update objects, processes messages and callback queries, and replies via the Telegram Bot API. GET returns 200 OK for verification."
+---
+
+The `/api/webhook` endpoint is the heart of ApiSquare — Telegram delivers all bot updates here as POST requests. The handler processes both plain text messages and inline-keyboard callback queries, maintaining per-user conversation state in Vercel KV so multi-step booking flows survive across separate Telegram messages. No authentication is required; Telegram calls this endpoint directly on your behalf.
+
+---
+
+## POST /api/webhook
+
+Telegram sends a JSON-encoded [Update object](https://core.telegram.org/bots/api#update) in the request body every time a user interacts with the bot.
+
+### Processing Pipeline
+
+The handler executes the following steps in order on every incoming update:
+
+1. **Deduplication** — checks `update_id` against a KV key (`processed:update:{update_id}`) with a **10-minute TTL** to skip replayed updates. Falls back to an in-memory `Set` when KV is unavailable.
+2. **Rate limiting** — enforces a per-user limit of **20 messages per 60-second window** based on the `chat.id` extracted from either the `message` or `callback_query` field.
+3. **Routing** — dispatches to the callback-query handler if `update.callback_query` is present, otherwise to the text-message handler.
+4. **Reply** — sends responses to the user via the Telegram Bot API using `sendMessage` or `answerCallbackQuery`.
+5. **Always `200 OK`** — returns `{"status":"ok"}` regardless of outcome.
+
+### Request Body
+
+Telegram delivers a `message` update when the user sends text:
+
+```json
+{
+  "update_id": 123456789,
+  "message": {
+    "message_id": 1,
+    "chat": { "id": 987654321 },
+    "text": "/start"
+  }
+}
+```
+
+Telegram delivers a `callback_query` update when the user taps an inline keyboard button:
+
+```json
+{
+  "update_id": 123456790,
+  "callback_query": {
+    "id": "abcdef123456",
+    "message": { "chat": { "id": 987654321 } },
+    "data": "reservar"
+  }
+}
+```
+
+<ParamField body="update_id" type="number" required>
+  Telegram's monotonically increasing update identifier. Used by the deduplication layer to skip already-processed updates within a 10-minute window.
+</ParamField>
+
+<ParamField body="message" type="object">
+  Present on text/command updates. Must contain at least `message.chat.id` and `message.text`.
+</ParamField>
+
+<ParamField body="callback_query" type="object">
+  Present on inline-button tap updates. Must contain `callback_query.id`, `callback_query.message.chat.id`, and `callback_query.data`.
+</ParamField>
+
+### Response
+
+The endpoint **always** returns `HTTP 200`:
+
+```json
+{ "status": "ok" }
+```
+
+<Note>
+  The webhook always returns `HTTP 200 {"status":"ok"}` — even when an
+  internal error occurs. This prevents Telegram from retrying the same update,
+  which would cause duplicate messages or duplicate bookings.
+</Note>
+
+---
+
+## GET /api/webhook — Verification Endpoint
+
+Returns `HTTP 200 {"status":"ok"}` immediately. This route exists so that Telegram (and any infrastructure probe) can verify the webhook URL is reachable before sending live updates.
+
+**Request**
+
+```bash
+curl https://your-app.vercel.app/api/webhook
+```
+
+**Response — HTTP 200 OK**
+
+```json
+{ "status": "ok" }
+```
+
+---
+
+## Supported Text Commands
+
+The message handler normalises incoming text to lowercase and trims whitespace before matching. The following inputs are recognised as top-level intents:
+
+| Command / Text | Action |
+|---|---|
+| `/start`, `hola`, `hello`, `hey` | Clear conversation state, show main menu |
+| `/servicios`, `servicios`, `servicio` | List all available services with prices |
+| `/misreservas`, `mis reservas`, `reservas` | Show the user's active reservations |
+| `/reservar`, `reservar`, `quiero reservar`, `agendar` | Begin the multi-step booking flow |
+
+Any message that does not match a top-level intent and does not correspond to an active conversation step also falls back to showing the main menu.
+
+---
+
+## Rate Limiting
+
+ApiSquare enforces a per-user rate limit to protect against abuse and excessive KV reads.
+
+| Parameter | Value |
+|---|---|
+| Maximum requests | 20 messages |
+| Window duration | 60 seconds |
+| Scope | Per `chat.id` |
+| KV key | `ratelimit:user:{chatId}` |
+| KV TTL | 60 seconds |
+
+When a user exceeds the limit:
+- If the triggering update is a **callback query**, Telegram receives an `answerCallbackQuery` call with the warning text `⚠️ Demasiadas solicitudes. Esperá un momento.`
+- If it is a **text message**, the bot sends `⚠️ Estás enviando demasiados mensajes. Por favor esperá un momento antes de continuar.`
+
+In both cases the handler returns `HTTP 200 {"status":"ok"}` immediately after responding.
+
+<Note>
+  The `chatId` used for rate limiting is extracted from whichever field is
+  present in the update: `update.message.chat.id` for text messages or
+  `update.callback_query.message.chat.id` for inline-button taps.
+</Note>
+
+---
+
+## Conversation State
+
+ApiSquare maintains multi-step booking state in Vercel KV under the key `conv:{chatId}`. State is a JSON object of type `ConversationState`:
+
+```json
+{
+  "paso": "nombre",
+  "profesional": "Francisco Chibilisco",
+  "servicio": "Sesión de Quiropraxia",
+  "nombre": null,
+  "fecha": null,
+  "hora": null
+}
+```
+
+The `paso` field drives the state machine. Recognised values are: `profesional`, `servicio`, `nombre`, `fecha`, `hora`, and `confirmar`. Sending `/start` (or any greeting) clears this state entirely, restarting the flow.
+
+---
+
+## Environment Variables
+
+<Warning>
+  Set `TELEGRAM_TOKEN` in your environment variables before deploying. Without
+  it, the bot cannot call `sendMessage` or `answerCallbackQuery`, so all
+  updates will be silently dropped (the webhook will still return `200 OK` to
+  Telegram).
+</Warning>
+
+| Variable | Required | Description |
+|---|---|---|
+| `TELEGRAM_TOKEN` | ✅ Yes | Bot token from [@BotFather](https://t.me/BotFather). Used for all Telegram Bot API calls. |
+| `KV_REST_API_URL` | Recommended | Vercel KV REST endpoint. Required for persistent state, deduplication, and rate limiting across serverless invocations. |
+| `KV_REST_API_TOKEN` | Recommended | Auth token for the Vercel KV REST API. Must be paired with `KV_REST_API_URL`. |
+
+When KV credentials are absent, the handler falls back to in-process memory storage — suitable for local development but not for production, since memory is not shared across serverless function instances.
